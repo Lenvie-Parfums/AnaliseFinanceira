@@ -647,16 +647,27 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
         if (isMatch(sel.options[i].value)) { targetOpt = sel.options[i]; break; }
       }
       if (targetOpt) {
-        // Remove as outras opcoes
         var keepVal = targetOpt.value;
+        // Verifica se ja esta no estado travado correto.
+        // Se sim, NAO mexe e NAO dispara change (evita re-render que reseta a tela).
+        var alreadyLocked = sel.disabled
+          && sel.value === keepVal
+          && sel.options.length === 1;
+        if (alreadyLocked) return;
+
+        // Remove as outras opcoes
         for (var j = sel.options.length - 1; j >= 0; j--) {
           if (sel.options[j].value !== keepVal) sel.remove(j);
         }
+        var changed = (sel.value !== keepVal);
         sel.value = keepVal;
         sel.disabled = true;
         sel.style.opacity = "0.7";
         sel.style.cursor = "not-allowed";
-        try { sel.dispatchEvent(new Event("change", {bubbles:true})); } catch(e) {}
+        // So dispara change se o valor realmente mudou (primeira aplicacao)
+        if (changed) {
+          try { sel.dispatchEvent(new Event("change", {bubbles:true})); } catch(e) {}
+        }
       }
     }
 
@@ -665,7 +676,10 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
     // Tambem reaplicar sempre que dados forem recarregados (selects podem ser repopulados)
     if (!window._channelLockObserver) {
       window._channelLockObserver = new MutationObserver(function() {
-        channelSelectIds.forEach(lockSelect);
+        if (window._channelLockApplying) return; // ignora mutacoes causadas pelo proprio lock
+        window._channelLockApplying = true;
+        try { channelSelectIds.forEach(lockSelect); }
+        finally { window._channelLockApplying = false; }
       });
       channelSelectIds.forEach(function(id) {
         var el = document.getElementById(id);
@@ -17709,6 +17723,7 @@ let taxChart=null, taxChannelsChart=null;
 
 function fillTaxChannels(){
   const sel=document.getElementById('tax-channel');
+  const prev=sel.value;
   // keep first option (Todos)
   const all=sel.querySelector('option[value="__ALL__"]');
   sel.innerHTML='';
@@ -17717,6 +17732,8 @@ function fillTaxChannels(){
     const o=document.createElement('option');
     o.value=c.name; o.textContent=c.name; sel.appendChild(o);
   }
+  // restaura selecao anterior se ainda existir
+  for(let i=0;i<sel.options.length;i++){ if(sel.options[i].value===prev){ sel.value=prev; break; } }
 }
 
 /* Atualiza select de canal de produtos com canais do Análise Mensal + Ranking */
@@ -17731,11 +17748,21 @@ function fillProdChannels(){
     }
   }
   if(allChannels.size > 0){
+    const prev=prodSel.value;
     prodSel.innerHTML = '';
     for(const name of allChannels){
       const o=document.createElement('option');
       o.value=name; o.textContent=name; prodSel.appendChild(o);
     }
+    // restaura selecao anterior se ainda existir (exato ou tolerante)
+    const norm=s=>String(s||'').trim().toLowerCase().replace(/\s+/g,' ');
+    let exact=-1,loose=-1;
+    for(let i=0;i<prodSel.options.length;i++){
+      if(prodSel.options[i].value===prev){exact=i;break;}
+      if(loose<0&&norm(prodSel.options[i].value)===norm(prev))loose=i;
+    }
+    const idx=exact>=0?exact:loose;
+    if(idx>=0) prodSel.selectedIndex=idx;
   }
 }
 fillTaxChannels();
@@ -19142,6 +19169,13 @@ function processPayload(payload){
 async function syncFromGoogleSheets(forceRefresh){
   updateDataStatus('loading');
 
+  // Captura o estado dos selects de filtro ANTES de qualquer repopulacao,
+  // para restaurar a escolha do usuario apos o auto-sync.
+  var _savedSelects = {};
+  document.querySelectorAll('select').forEach(function(s){
+    if (s.id) _savedSelects[s.id] = s.value;
+  });
+
   try {
     // Quando forceRefresh=true, força o Apps Script a reler a planilha e atualizar
     // o cache compartilhado. Outros usuários vão receber esses dados na proxima leitura.
@@ -19336,11 +19370,34 @@ async function syncFromGoogleSheets(forceRefresh){
       console.warn('[Produtos] rawProd vazio ou invalido:', rawProd);
     }
 
+    // ── Restaura o estado dos selects de filtro (capturado no inicio) ──
+    // (o auto-sync de 30s nao deve mais resetar a opcao que o usuario escolheu)
+    fillTaxCmpChannel();
+
+    // Restaura os valores escolhidos (se a option ainda existir) ANTES de renderizar,
+    // para que cada renderXXX leia o filtro correto.
+    // Match tolerante: exato primeiro; senao case-insensitive / sem espacos extras,
+    // pois os fills podem recriar options com capitalizacao diferente.
+    Object.keys(_savedSelects).forEach(function(id){
+      var s = document.getElementById(id);
+      if (!s) return;
+      var v = _savedSelects[id];
+      if (v === undefined || v === null) return;
+      var norm = function(x){ return String(x||'').trim().toLowerCase().replace(/\s+/g,' '); };
+      var vn = norm(v);
+      var exact = -1, loose = -1;
+      for (var k = 0; k < s.options.length; k++) {
+        if (s.options[k].value === v) { exact = k; break; }
+        if (loose < 0 && norm(s.options[k].value) === vn) loose = k;
+      }
+      var idx = exact >= 0 ? exact : loose;
+      if (idx >= 0) s.selectedIndex = idx;
+    });
+
     renderTaxes(); renderProducts(); renderDRE(); renderCompare(); renderOverview();
     renderEcomDRE(); renderEstados(); renderCanaisConsolidados();
     renderTaxComparacao(); renderCompareEcom();
     if (typeof renderProductsCompare === 'function') renderProductsCompare();
-    fillTaxCmpChannel();
     const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     updateDataStatus('synced', hora);
 
