@@ -22038,7 +22038,7 @@ window.dismissLogin = function(oEl){
   }
 
   // —— Comparativo & Leitura CFO: Conta | Contábil | Gerencial | Δ (Ger − Cont) | Δ % ——
-  function finRenderCFO(grid){
+  function finRenderCFO(g
     var rows=grid.map(function(r){ return r.slice(); });
     if(rows.length && String(rows[0][0]||'').trim().toUpperCase()==='LENVIE') rows=rows.slice(1);
     if(rows.length && rows[0].filter(function(x){return String(x||'').trim();}).length<=1) rows=rows.slice(1);
