@@ -79,6 +79,7 @@ html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:
   box-shadow:0 8px 24px rgba(0,0,0,.4),0 2px 6px rgba(0,0,0,.25);
   padding:6px;opacity:0;visibility:hidden;transform:translateY(-6px);
   transition:opacity .15s,transform .15s,visibility .15s;z-index:200;
+  max-height:calc(100vh - 80px);overflow-y:auto;
 }
 .nav-item:hover .nav-dropdown,
 .nav-item.dd-open .nav-dropdown{opacity:1;visibility:visible;transform:translateY(0)}
@@ -344,6 +345,31 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
   .chart-box{height:220px}
   .chart-box.small{height:200px}
 }
+
+/* ===== Seções Financeiras (tabelas genéricas vindas do Google Sheets) ===== */
+.fin-wrap{margin-top:16px}
+.fin-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--panel)}
+table.fin-table{border-collapse:collapse;width:100%;font-size:13px;min-width:560px}
+table.fin-table th,table.fin-table td{padding:8px 10px;border-bottom:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--text)}
+table.fin-table .fin-r{text-align:right}
+table.fin-table .fin-l{text-align:left}
+table.fin-table tr.fin-h th{background:var(--header-bg);color:var(--text);font-weight:700;border-bottom:2px solid var(--accent);font-size:12.5px}
+table.fin-table td.fin-c0,table.fin-table th.fin-c0{position:sticky;left:0;background:var(--panel);z-index:2;font-weight:600}
+table.fin-table tr.fin-h th.fin-c0{background:var(--header-bg);z-index:4}
+table.fin-table tbody tr:nth-child(even) td{background:rgba(255,255,255,.025)}
+table.fin-table tr:nth-child(even) td.fin-c0{background:#1d2433}
+table.fin-table tr.fin-sec td{background:rgba(79,140,255,.10);font-weight:700;color:var(--accent-2);border-top:1px solid var(--accent);text-transform:none}
+table.fin-table tr.fin-tot td{background:rgba(79,140,255,.06);font-weight:700;border-top:1px solid var(--border)}
+table.fin-table tr.fin-tot td.fin-c0{background:#1e2740}
+table.fin-table tr:hover td{background:var(--row-hover)}
+.fin-empty{padding:36px;text-align:center;color:var(--muted)}
+table.fin-table tr.fin-note td{background:transparent;color:var(--muted);font-size:12px;line-height:1.5;white-space:normal;font-weight:400;border-bottom:1px solid var(--border)}
+table.fin-table .fin-pct{color:var(--muted);font-size:11px;font-weight:400}
+table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
+.fin-blk-title{margin:18px 0 4px;font-size:12.5px;font-weight:700;letter-spacing:.3px;color:var(--accent-2);text-transform:none}
+.fin-blk-note{margin:6px 0 4px;font-size:12px;line-height:1.6;color:var(--muted)}
+@media(max-width:768px){table.fin-table{min-width:520px}}
+
 </style>
 </head>
 <body>
@@ -480,7 +506,7 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
 
 <script>
 (function() {
-  var TABS = ["dre","dre-ecom","taxes","compare","compare-ecom","products","estados","canais-consolidados","fluxo-caixa","overview"];
+  var TABS = ["dre","dre-ecom","taxes","compare","compare-ecom","products","estados","canais-consolidados","fluxo-caixa","fin-kpis","fin-sga","fin-cmv","fin-dfc","fin-dfc-pr","fin-concil","fin-consol","fin-bp-cont","fin-cdg-cont","fin-bp-ger","fin-estoque","fin-cdg-ger","fin-cfo","cnpj","overview"];
   var APPS_URL = "https://script.google.com/macros/s/AKfycbwGMmOnrxdmd3MweKteKFWlrNantYq1Gm0ztWCqe2B8blki8_nMcOuXY9y3LMTHHlbg_A/exec";
 
   // Usuario padrao (fallback caso o Sheets nao responda)
@@ -488,7 +514,7 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
     {u:"lucas.silva",     p:"1234", n:"Lucas Bezerra da Silva", r:"admin",     perms:TABS.slice()},
     {u:"ana.paula",       p:"1234", n:"ana Paula",              r:"admin",     perms:TABS.slice()},
     {u:"janaina.lima",    p:"1234", n:"Janaina Lima",           r:"admin",     perms:TABS.slice()},
-    {u:"alexandre.dini",  p:"1234", n:"Alexandre Dini",         r:"ecommerce", perms:["dre-ecom","compare-ecom","products","estados","canais-consolidados","overview"]},
+    {u:"alexandre.dini",  p:"1234", n:"Alexandre Dini",         r:"ecommerce", perms:["dre-ecom","compare-ecom","products","estados","canais-consolidados","cnpj","overview"]},
     {u:"higor.nogueira",  p:"2170", n:"Higor Nogueira",         r:"admin",     perms:TABS.slice()},
     {u:"alan.villela",    p:"1234", n:"Alan Villela",           r:"admin",     perms:TABS.slice()}
   ];
@@ -516,9 +542,9 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
             if (usr.r === "admin") {
               usr.perms = TABS.slice();
             } else if (usr.r === "ecommerce") {
-              usr.perms = ["dre-ecom","compare-ecom","products","estados","canais-consolidados","overview"];
+              usr.perms = ["dre-ecom","compare-ecom","products","estados","canais-consolidados","cnpj","overview"];
             } else if (usr.r === "atacado") {
-              usr.perms = ["products","estados","canais-consolidados","overview"];
+              usr.perms = ["products","estados","canais-consolidados","cnpj","overview"];
             }
           }
         }
@@ -636,13 +662,13 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
     } else if (user.r === "ecommerce") {
       // Ecommerce vê: DRE Completa (filtrada), DRE Ecom, Comp DRE Geral (filtrada),
       // Comp DRE Ecom, Produtos (canal travado), Estados (canal travado),
-      // Canais Consolidados (so canal Ecommerce) e Visao Geral
-      allowed = ["dre","dre-ecom","compare","compare-ecom","products","estados","canais-consolidados","overview"];
+      // Canais Consolidados (so canal Ecommerce), Consulta CNPJ e Visao Geral
+      allowed = ["dre","dre-ecom","compare","compare-ecom","products","estados","canais-consolidados","cnpj","overview"];
     } else if (user.r === "atacado") {
       // Atacado vê: DRE Completa (filtrada), Comp DRE Geral (filtrada),
       // Produtos (canal travado), Estados (canal travado),
-      // Canais Consolidados (so canal Atacado) e Visao Geral
-      allowed = ["dre","compare","products","estados","canais-consolidados","overview"];
+      // Canais Consolidados (so canal Atacado), Consulta CNPJ e Visao Geral
+      allowed = ["dre","compare","products","estados","canais-consolidados","cnpj","overview"];
     } else {
       allowed = user.perms || [];
     }
@@ -1120,7 +1146,23 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
       <button class="nav-link">Financeiro <span class="chev">▾</span></button>
       <div class="nav-dropdown">
         <a data-tab="fluxo-caixa"><span class="ico">💰</span>Fluxo de Caixa</a>
+        <a data-tab="fin-kpis"><span class="ico">📊</span>KPIs</a>
+        <a data-tab="fin-sga"><span class="ico">🧾</span>SG&A</a>
+        <a data-tab="fin-cmv"><span class="ico">📦</span>CMV por Canal</a>
+        <a data-tab="fin-dfc"><span class="ico">💵</span>DFC</a>
+        <a data-tab="fin-dfc-pr"><span class="ico">📐</span>DFC Proj × Real</a>
+        <a data-tab="fin-concil"><span class="ico">🔗</span>Conciliação DFC</a>
+        <a data-tab="fin-consol"><span class="ico">🧮</span>Consolidação 12-2025</a>
+        <a data-tab="fin-bp-cont"><span class="ico">🏛️</span>Balanço Patrimonial Contábil</a>
+        <a data-tab="fin-cdg-cont"><span class="ico">📐</span>Indicadores CDG Contábil</a>
+        <a data-tab="fin-bp-ger"><span class="ico">🏦</span>Balanço Patrimonial Gerencial</a>
+        <a data-tab="fin-estoque"><span class="ico">📦</span>Painel Evolução Estoque</a>
+        <a data-tab="fin-cdg-ger"><span class="ico">📈</span>Indicadores CDG Gerencial</a>
+        <a data-tab="fin-cfo"><span class="ico">🧭</span>Comparativo & Leitura CFO</a>
       </div>
+    </div>
+    <div class="nav-item" data-group="cnpj">
+      <button class="nav-link nav-link-direct" data-tab="cnpj">Consulta CNPJ</button>
     </div>
     <div class="nav-item" data-group="overview">
       <button class="nav-link nav-link-direct" data-tab="overview">Visão Geral</button>
@@ -1177,6 +1219,23 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
   <div class="group-label">Financeiro</div>
   <nav class="nav">
     <button data-tab="fluxo-caixa"><span class="ico">💰</span><span class="text">Fluxo de Caixa</span></button>
+    <button data-tab="fin-kpis"><span class="ico">📊</span><span class="text">KPIs</span></button>
+    <button data-tab="fin-sga"><span class="ico">🧾</span><span class="text">SG&A</span></button>
+    <button data-tab="fin-cmv"><span class="ico">📦</span><span class="text">CMV por Canal</span></button>
+    <button data-tab="fin-dfc"><span class="ico">💵</span><span class="text">DFC</span></button>
+    <button data-tab="fin-dfc-pr"><span class="ico">📐</span><span class="text">DFC Proj × Real</span></button>
+    <button data-tab="fin-concil"><span class="ico">🔗</span><span class="text">Conciliação DFC</span></button>
+    <button data-tab="fin-consol"><span class="ico">🧮</span><span class="text">Consolidação 12-2025</span></button>
+    <button data-tab="fin-bp-cont"><span class="ico">🏛️</span><span class="text">Balanço Patrimonial Contábil</span></button>
+    <button data-tab="fin-cdg-cont"><span class="ico">📐</span><span class="text">Indicadores CDG Contábil</span></button>
+    <button data-tab="fin-bp-ger"><span class="ico">🏦</span><span class="text">Balanço Patrimonial Gerencial</span></button>
+    <button data-tab="fin-estoque"><span class="ico">📦</span><span class="text">Painel Evolução Estoque</span></button>
+    <button data-tab="fin-cdg-ger"><span class="ico">📈</span><span class="text">Indicadores CDG Gerencial</span></button>
+    <button data-tab="fin-cfo"><span class="ico">🧭</span><span class="text">Comparativo & Leitura CFO</span></button>
+  </nav>
+  <div class="group-label">Ferramentas</div>
+  <nav class="nav">
+    <button data-tab="cnpj"><span class="ico">🔎</span><span class="text">Consulta CNPJ</span></button>
   </nav>
   <div class="group-label">Geral</div>
   <nav class="nav">
@@ -2046,6 +2105,704 @@ table.dre tbody tr:hover td.first{background:var(--row-hover)}
         💡 <b>Estrutura preparada para preenchimento.</b> Esta aba está pronta para receber os dados de fluxo de caixa. Os números serão integrados quando forem fornecidos — podendo ser via Google Sheets (nova aba) ou inserção direta.
       </div>
     </section>
+
+    <!-- ===== FINANCEIRO: KPIs ===== -->
+    <section id="tab-fin-kpis" class="tab">
+      <h2 class="page-title">📊 KPIs</h2>
+      <div class="page-sub">Painel de KPIs e indicadores financeiros do período. Dados extraídos da aba <b>KPIs</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-kpis"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: SG&A ===== -->
+    <section id="tab-fin-sga" class="tab">
+      <h2 class="page-title">🧾 SG&A</h2>
+      <div class="page-sub">Despesas operacionais (SG&A) — evolução mensal e representatividade. Dados extraídos da aba <b>SG&A</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-sga"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: CMV por Canal ===== -->
+    <section id="tab-fin-cmv" class="tab">
+      <h2 class="page-title">📦 CMV por Canal</h2>
+      <div class="page-sub">Custo da Mercadoria Vendida por canal — evolução mensal. Dados extraídos da aba <b>CMV por Canal</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-cmv"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: DFC ===== -->
+    <section id="tab-fin-dfc" class="tab">
+      <h2 class="page-title">💵 DFC</h2>
+      <div class="page-sub">Demonstração do Fluxo de Caixa (método direto). Dados extraídos da aba <b>DFC</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-dfc"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: DFC Proj × Real ===== -->
+    <section id="tab-fin-dfc-pr" class="tab">
+      <h2 class="page-title">📐 DFC Proj × Real</h2>
+      <div class="page-sub">Fluxo de caixa Projetado × Realizado por mês. Dados extraídos da aba <b>DFC Proj x Real</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-dfc-pr"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Conciliação DFC ===== -->
+    <section id="tab-fin-concil" class="tab">
+      <h2 class="page-title">🔗 Conciliação DFC</h2>
+      <div class="page-sub">Conciliação da DFC — ponte do Lucro Líquido ao caixa. Dados extraídos da aba <b>Conciliação DFC</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-concil"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Consolidação 12-2025 ===== -->
+    <section id="tab-fin-consol" class="tab">
+      <h2 class="page-title">🧮 Consolidação 12-2025</h2>
+      <div class="page-sub">Consolidação patrimonial em 31/12/2025. Dados extraídos da aba <b>Consolidação 12-2025</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-consol"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Balanço Patrimonial Contábil ===== -->
+    <section id="tab-fin-bp-cont" class="tab">
+      <h2 class="page-title">🏛️ Balanço Patrimonial Contábil</h2>
+      <div class="page-sub">Balanço Patrimonial mensal — visão contábil. Dados extraídos da aba <b>BP_Mensal_Contabil</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-bp-cont"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Indicadores CDG Contábil ===== -->
+    <section id="tab-fin-cdg-cont" class="tab">
+      <h2 class="page-title">📐 Indicadores CDG Contábil</h2>
+      <div class="page-sub">Indicadores de Capital de Giro — visão contábil. Dados extraídos da aba <b>Indicadores_CDG_Contabil</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-cdg-cont"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Balanço Patrimonial Gerencial ===== -->
+    <section id="tab-fin-bp-ger" class="tab">
+      <h2 class="page-title">🏦 Balanço Patrimonial Gerencial</h2>
+      <div class="page-sub">Balanço Patrimonial mensal — visão gerencial. Dados extraídos da aba <b>BP_Mensal_Gerencial</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-bp-ger"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Painel Evolução Estoque ===== -->
+    <section id="tab-fin-estoque" class="tab">
+      <h2 class="page-title">📦 Painel Evolução Estoque</h2>
+      <div class="page-sub">Evolução e maturidade do estoque ao longo dos meses. Dados extraídos da aba <b>Painel Evolução Estoque</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-estoque"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Indicadores CDG Gerencial ===== -->
+    <section id="tab-fin-cdg-ger" class="tab">
+      <h2 class="page-title">📈 Indicadores CDG Gerencial</h2>
+      <div class="page-sub">Indicadores de Capital de Giro — visão gerencial. Dados extraídos da aba <b>Indicadores_CDG_Gerencial</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-cdg-ger"></div>
+    </section>
+
+    <!-- ===== FINANCEIRO: Comparativo & Leitura CFO ===== -->
+    <section id="tab-fin-cfo" class="tab">
+      <h2 class="page-title">🧭 Comparativo & Leitura CFO</h2>
+      <div class="page-sub">Comparativo Contábil × Gerencial e leitura do CFO. Dados extraídos da aba <b>Comparativo & Leitura CFO</b> do Google Planilhas.</div>
+      <div class="fin-wrap" id="fin-host-fin-cfo"></div>
+    </section>
+
+    <!-- ===== CONSULTA CNPJ ===== -->
+    <section id="tab-cnpj" class="tab">
+      <h2 class="page-title">🔎 Consulta CNPJ</h2>
+      <div class="page-sub">Consulta pública de CNPJ via API <b>publica.cnpj.ws</b>. Digite um CNPJ e obtenha um resumo executivo completo + renderização dinâmica de todo o JSON retornado.</div>
+
+      <!-- Mount point do app React -->
+      <div id="cnpj-app-root" style="min-height:300px;"></div>
+
+      <!-- CSS Tailwind (CDN) escopado e overrides de tema -->
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+      <style>
+        /* Escopo do app CNPJ - garante que o Tailwind nao polua o resto do dashboard */
+        #cnpj-app-root, #cnpj-app-root *{box-sizing:border-box}
+        #cnpj-app-root{color:#e7ecf3;font-family:inherit}
+        #cnpj-app-root .cnpj-card{background:#1a2030;border:1px solid #2d3548;border-radius:12px;padding:18px}
+        #cnpj-app-root .cnpj-input{background:#0f1419;border:1px solid #2d3548;color:#e7ecf3;border-radius:10px;padding:12px 14px;font-size:15px;letter-spacing:.5px;width:100%;outline:none;transition:border-color .15s}
+        #cnpj-app-root .cnpj-input:focus{border-color:#4f8cff;box-shadow:0 0 0 3px rgba(79,140,255,.18)}
+        #cnpj-app-root .cnpj-btn{background:linear-gradient(135deg,#4f8cff,#6c5ce7);color:#fff;border:none;border-radius:10px;padding:12px 22px;font-weight:600;cursor:pointer;font-size:14px;letter-spacing:.3px;transition:transform .1s,opacity .15s}
+        #cnpj-app-root .cnpj-btn:hover{transform:translateY(-1px)}
+        #cnpj-app-root .cnpj-btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+        #cnpj-app-root .cnpj-btn-ghost{background:transparent;border:1px solid #2d3548;color:#cbd5e1;border-radius:10px;padding:10px 16px;font-weight:600;cursor:pointer;font-size:13px;transition:background .15s}
+        #cnpj-app-root .cnpj-btn-ghost:hover{background:#222a3d}
+        #cnpj-app-root .cnpj-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:uppercase}
+        #cnpj-app-root .cnpj-chip-ok{background:rgba(46,204,113,.12);color:#2ecc71;border:1px solid rgba(46,204,113,.3)}
+        #cnpj-app-root .cnpj-chip-bad{background:rgba(255,93,108,.12);color:#ff5d6c;border:1px solid rgba(255,93,108,.3)}
+        #cnpj-app-root .cnpj-chip-neutral{background:rgba(138,147,166,.12);color:#cbd5e1;border:1px solid rgba(138,147,166,.3)}
+        #cnpj-app-root .cnpj-kpi{background:#222a3d;border:1px solid #2d3548;border-radius:10px;padding:12px 14px}
+        #cnpj-app-root .cnpj-kpi .lbl{font-size:11px;color:#8a93a6;text-transform:uppercase;letter-spacing:.5px;font-weight:600;margin-bottom:4px}
+        #cnpj-app-root .cnpj-kpi .val{font-size:16px;color:#e7ecf3;font-weight:600;word-break:break-word}
+        #cnpj-app-root .cnpj-error{background:rgba(255,93,108,.08);border:1px solid rgba(255,93,108,.35);color:#ff8a95;padding:12px 14px;border-radius:10px;font-size:14px}
+        #cnpj-app-root .cnpj-info{background:rgba(79,140,255,.08);border:1px solid rgba(79,140,255,.3);color:#9ec1ff;padding:10px 14px;border-radius:10px;font-size:13px}
+        #cnpj-app-root .cnpj-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;display:inline-block;animation:cnpjspin .8s linear infinite;vertical-align:middle}
+        @keyframes cnpjspin{to{transform:rotate(360deg)}}
+        #cnpj-app-root details{background:#222a3d;border:1px solid #2d3548;border-radius:10px;margin-bottom:8px;overflow:hidden}
+        #cnpj-app-root details>summary{cursor:pointer;padding:10px 14px;font-weight:600;font-size:13px;color:#cbd5e1;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:10px;user-select:none}
+        #cnpj-app-root details>summary::-webkit-details-marker{display:none}
+        #cnpj-app-root details>summary::after{content:'▾';color:#8a93a6;transition:transform .2s}
+        #cnpj-app-root details[open]>summary::after{transform:rotate(180deg)}
+        #cnpj-app-root details>.cnpj-acc-body{padding:12px 14px;border-top:1px solid #2d3548;background:#1a2030}
+        #cnpj-app-root table.cnpj-tbl{width:100%;border-collapse:collapse;font-size:13px}
+        #cnpj-app-root table.cnpj-tbl th,#cnpj-app-root table.cnpj-tbl td{border:1px solid #2d3548;padding:8px 10px;text-align:left;vertical-align:top}
+        #cnpj-app-root table.cnpj-tbl th{background:#172033;color:#8a93a6;font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.3px}
+        #cnpj-app-root table.cnpj-tbl tr:hover td{background:#222b40}
+        #cnpj-app-root .cnpj-modal-back{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(3px);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+        #cnpj-app-root .cnpj-modal{background:#1a2030;border:1px solid #2d3548;border-radius:14px;max-width:920px;width:100%;max-height:85vh;display:flex;flex-direction:column;overflow:hidden}
+        #cnpj-app-root .cnpj-modal-head{padding:14px 18px;border-bottom:1px solid #2d3548;display:flex;align-items:center;justify-content:space-between}
+        #cnpj-app-root .cnpj-modal-body{padding:14px 18px;overflow:auto;flex:1}
+        #cnpj-app-root pre.cnpj-json{background:#0f1419;border:1px solid #2d3548;border-radius:10px;padding:14px;font-size:12.5px;line-height:1.55;color:#cbd5e1;overflow:auto;max-height:60vh;white-space:pre-wrap;word-break:break-word}
+        #cnpj-app-root .cnpj-section-title{font-size:15px;font-weight:700;color:#e7ecf3;margin:0 0 10px;display:flex;align-items:center;gap:8px}
+        #cnpj-app-root .cnpj-muted{color:#8a93a6;font-size:12px}
+        #cnpj-app-root .cnpj-link{color:#7aa7ff;text-decoration:none}
+        #cnpj-app-root .cnpj-link:hover{text-decoration:underline}
+        #cnpj-app-root .cnpj-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+        #cnpj-app-root .cnpj-grid-3{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+        @media (max-width:640px){
+          #cnpj-app-root .cnpj-card{padding:14px}
+          #cnpj-app-root .cnpj-input{font-size:14px;padding:11px 12px}
+        }
+      </style>
+
+      <!-- React + ReactDOM + Babel (Standalone para JSX em runtime) -->
+      <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+      <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+      <!-- =================== APP REACT CNPJ =================== -->
+      <script type="text/babel" data-presets="env,react">
+      (function(){
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // ---------- Utils de formatacao ----------
+        const onlyDigits = (s) => String(s||'').replace(/\D+/g,'');
+
+        function maskCNPJ(s){
+          const d = onlyDigits(s).slice(0,14);
+          let out = '';
+          if (d.length>0) out = d.substring(0,2);
+          if (d.length>=3) out += '.' + d.substring(2,5);
+          if (d.length>=6) out += '.' + d.substring(5,8);
+          if (d.length>=9) out += '/' + d.substring(8,12);
+          if (d.length>=13) out += '-' + d.substring(12,14);
+          return out;
+        }
+        function formatCNPJ(s){
+          const d = onlyDigits(s);
+          if (d.length!==14) return s||'';
+          return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+        }
+        function formatCPF(s){
+          const d = onlyDigits(s);
+          if (d.length!==11) return s||'';
+          return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4');
+        }
+        function formatCEP(s){
+          const d = onlyDigits(s);
+          if (d.length!==8) return s||'';
+          return d.replace(/^(\d{5})(\d{3})$/,'$1-$2');
+        }
+        function formatPhone(s){
+          const d = onlyDigits(s);
+          if (d.length===11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/,'($1) $2-$3');
+          if (d.length===10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/,'($1) $2-$3');
+          if (d.length===9)  return d.replace(/^(\d{5})(\d{4})$/,'$1-$2');
+          if (d.length===8)  return d.replace(/^(\d{4})(\d{4})$/,'$1-$2');
+          return s||'';
+        }
+        function formatDate(s){
+          if (!s) return '';
+          // ISO yyyy-mm-dd ou yyyy-mm-ddT...
+          const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (m) return m[3]+'/'+m[2]+'/'+m[1];
+          return String(s);
+        }
+        function formatMoney(v){
+          const n = (typeof v === 'number') ? v : Number(String(v).replace(',','.'));
+          if (!isFinite(n)) return String(v);
+          return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+        }
+        function formatBool(v){ return v ? 'Sim' : 'Nao'; }
+
+        // Heuristica para formatar valor segundo o nome da chave
+        function smartFormat(key, value){
+          if (value === null || value === undefined || value === '') return '—';
+          if (typeof value === 'boolean') return formatBool(value);
+          const k = String(key||'').toLowerCase();
+
+          if (typeof value === 'string' || typeof value === 'number'){
+            const sv = String(value);
+            if (/^cnpj$/.test(k) || k.includes('cnpj')) {
+              const d = onlyDigits(sv);
+              if (d.length===14) return formatCNPJ(d);
+            }
+            if (k === 'cpf' || k.endsWith('_cpf')) {
+              const d = onlyDigits(sv);
+              if (d.length===11) return formatCPF(d);
+            }
+            if (k.includes('cep')) {
+              const d = onlyDigits(sv);
+              if (d.length===8) return formatCEP(d);
+            }
+            if (k.includes('telefone') || k.includes('ddd') && k.includes('numero') || k === 'fone' || k.includes('phone')) {
+              const d = onlyDigits(sv);
+              if (d.length>=8 && d.length<=11) return formatPhone(d);
+            }
+            if (k.includes('data') || k.endsWith('_em') || k.includes('inicio_atividade') || k.includes('atualizado')) {
+              const f = formatDate(sv);
+              if (f && f !== sv) return f;
+            }
+            if (k.includes('capital_social') || k.includes('valor') || k.includes('preco') || k.includes('saldo')) {
+              return formatMoney(value);
+            }
+          }
+          return value;
+        }
+
+        // ---------- Validacao CNPJ ----------
+        function isValidCNPJ(cnpj){
+          const c = onlyDigits(cnpj);
+          if (c.length !== 14) return false;
+          if (/^(\d)\1{13}$/.test(c)) return false;
+          const calc = (base) => {
+            let len = base.length, num = base, sum = 0, pos = len - 7;
+            for (let i = len; i >= 1; i--) {
+              sum += parseInt(num.charAt(len - i),10) * pos--;
+              if (pos < 2) pos = 9;
+            }
+            const r = sum % 11;
+            return r < 2 ? 0 : 11 - r;
+          };
+          const d1 = calc(c.substring(0,12));
+          if (d1 !== parseInt(c.charAt(12),10)) return false;
+          const d2 = calc(c.substring(0,13));
+          if (d2 !== parseInt(c.charAt(13),10)) return false;
+          return true;
+        }
+
+        // ---------- Extracao do resumo executivo ----------
+        function getDeep(obj, path){
+          try { return path.split('.').reduce((a,k)=> (a==null?a:a[k]), obj); } catch(e){ return undefined; }
+        }
+        function firstDefined(obj, paths){
+          for (const p of paths){
+            const v = getDeep(obj, p);
+            if (v !== undefined && v !== null && v !== '') return v;
+          }
+          return undefined;
+        }
+        function buildSummary(data){
+          if (!data || typeof data !== 'object') return null;
+          // publica.cnpj.ws retorna em data.estabelecimento.* e data.razao_social
+          const est = data.estabelecimento || {};
+          const end = [
+            est.tipo_logradouro, est.logradouro,
+            est.numero ? ('Nº ' + est.numero) : null,
+            est.complemento || null,
+            est.bairro ? ('— ' + est.bairro) : null
+          ].filter(Boolean).join(' ');
+
+          const telefones = (est.telefone1 ? [est] : []).map(e =>
+            ([e.ddd1, e.telefone1].filter(Boolean).join(''))
+          ).concat(est.telefone2 ? [(est.ddd2||'')+est.telefone2] : []).filter(Boolean);
+
+          const ies = Array.isArray(est.inscricoes_estaduais)
+            ? est.inscricoes_estaduais.map(ie => (ie.inscricao_estadual || ie.numero || '') + (ie.estado && ie.estado.sigla ? ' / '+ie.estado.sigla : '') + (ie.ativo!==undefined?(' ('+(ie.ativo?'Ativa':'Baixada')+')') :''))
+            : [];
+
+          return {
+            'CNPJ': formatCNPJ(est.cnpj || data.cnpj || ''),
+            'Razao Social': firstDefined(data, ['razao_social']) || '—',
+            'Nome Fantasia': est.nome_fantasia || data.nome_fantasia || '—',
+            'Situacao Cadastral': est.situacao_cadastral || '—',
+            'Data Situacao': formatDate(est.data_situacao_cadastral || ''),
+            'Data de Abertura': formatDate(est.data_inicio_atividade || ''),
+            'Natureza Juridica': (data.natureza_juridica && (data.natureza_juridica.descricao || data.natureza_juridica.id)) || '—',
+            'Porte': (data.porte && (data.porte.descricao || data.porte.id)) || '—',
+            'Capital Social': data.capital_social ? formatMoney(data.capital_social) : '—',
+            'CNAE Principal': est.atividade_principal ? ((est.atividade_principal.subclasse||'') + ' — ' + (est.atividade_principal.descricao||'')) : '—',
+            'Telefone': telefones.length ? telefones.map(formatPhone).join(' / ') : '—',
+            'E-mail': est.email || '—',
+            'Endereco': end || '—',
+            'Cidade/UF': [est.cidade && est.cidade.nome, est.estado && est.estado.sigla].filter(Boolean).join(' / ') || '—',
+            'CEP': est.cep ? formatCEP(est.cep) : '—',
+            'Inscricoes Estaduais': ies.length ? ies.join('  •  ') : '—'
+          };
+        }
+
+        // ---------- Contadores ----------
+        function countStuff(node, acc){
+          acc = acc || {filled:0, empty:0, objects:0, lists:0};
+          if (Array.isArray(node)){
+            acc.lists++;
+            node.forEach(it => countStuff(it, acc));
+          } else if (node && typeof node === 'object') {
+            acc.objects++;
+            Object.keys(node).forEach(k => countStuff(node[k], acc));
+          } else {
+            if (node === null || node === undefined || node === '') acc.empty++;
+            else acc.filled++;
+          }
+          return acc;
+        }
+
+        // ---------- Renderer dinamico ----------
+        function humanKey(k){
+          return String(k).replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
+
+        function DynamicRender({ name, value, depth }){
+          depth = depth || 0;
+
+          if (value === null || value === undefined || value === '') {
+            return <span className="cnpj-muted">—</span>;
+          }
+          if (typeof value === 'boolean') return <span>{formatBool(value)}</span>;
+          if (typeof value === 'string' || typeof value === 'number') {
+            const formatted = smartFormat(name, value);
+            return <span>{String(formatted)}</span>;
+          }
+
+          // Array
+          if (Array.isArray(value)){
+            if (value.length === 0) return <span className="cnpj-muted">(lista vazia)</span>;
+            const allPrimitive = value.every(v => v===null || typeof v !== 'object');
+            if (allPrimitive){
+              return (
+                <ul style={{margin:0,paddingLeft:18}}>
+                  {value.map((v,i) => <li key={i}>{smartFormat(name, v) || '—'}</li>)}
+                </ul>
+              );
+            }
+            const allObjects = value.every(v => v && typeof v === 'object' && !Array.isArray(v));
+            if (allObjects){
+              // Tabela com colunas = uniao das chaves
+              const cols = Array.from(value.reduce((s,o)=>{ Object.keys(o).forEach(k=>s.add(k)); return s; }, new Set()));
+              return (
+                <div style={{overflowX:'auto'}}>
+                  <table className="cnpj-tbl">
+                    <thead><tr>{cols.map(c => <th key={c}>{humanKey(c)}</th>)}</tr></thead>
+                    <tbody>
+                      {value.map((row,i)=>(
+                        <tr key={i}>
+                          {cols.map(c => (
+                            <td key={c}>
+                              <DynamicRender name={c} value={row[c]} depth={depth+1} />
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            }
+            // Misto: lista de items expansiveis
+            return (
+              <div>
+                {value.map((v,i)=>(
+                  <details key={i} open={depth<1}>
+                    <summary>Item {i+1}</summary>
+                    <div className="cnpj-acc-body">
+                      <DynamicRender name={name+'_item'} value={v} depth={depth+1} />
+                    </div>
+                  </details>
+                ))}
+              </div>
+            );
+          }
+
+          // Objeto
+          if (typeof value === 'object'){
+            const entries = Object.entries(value);
+            if (entries.length === 0) return <span className="cnpj-muted">(objeto vazio)</span>;
+            // Pequenos objetos: render em grid de pares chave/valor
+            const allPrimitive = entries.every(([,v]) => v===null || (typeof v !== 'object'));
+            if (allPrimitive){
+              return (
+                <div className="cnpj-grid">
+                  {entries.map(([k,v]) => (
+                    <div key={k} className="cnpj-kpi">
+                      <div className="lbl">{humanKey(k)}</div>
+                      <div className="val"><DynamicRender name={k} value={v} depth={depth+1} /></div>
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            // Misto: cada chave vira accordion (ou inline para primitivas)
+            return (
+              <div>
+                {entries.map(([k,v]) => {
+                  const isComplex = v && typeof v === 'object';
+                  if (!isComplex){
+                    return (
+                      <div key={k} className="cnpj-kpi" style={{marginBottom:8}}>
+                        <div className="lbl">{humanKey(k)}</div>
+                        <div className="val"><DynamicRender name={k} value={v} depth={depth+1} /></div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <details key={k} open={depth<1}>
+                      <summary>
+                        <span>{humanKey(k)}</span>
+                        <span className="cnpj-muted" style={{fontWeight:400,fontSize:11}}>
+                          {Array.isArray(v) ? (v.length+' item(s)') : (Object.keys(v).length+' campo(s)')}
+                        </span>
+                      </summary>
+                      <div className="cnpj-acc-body">
+                        <DynamicRender name={k} value={v} depth={depth+1} />
+                      </div>
+                    </details>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          return <span>{String(value)}</span>;
+        }
+
+        // ---------- Fetch com timeout ----------
+        function fetchWithTimeout(url, ms){
+          return new Promise(function(resolve, reject){
+            const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+            const tid = setTimeout(()=>{
+              if (ctrl) ctrl.abort();
+              reject(new Error('timeout'));
+            }, ms);
+            fetch(url, ctrl ? {signal: ctrl.signal} : undefined)
+              .then(r => { clearTimeout(tid); resolve(r); })
+              .catch(err => { clearTimeout(tid); reject(err); });
+          });
+        }
+
+        // ---------- Componente principal ----------
+        function CNPJApp(){
+          const [input, setInput] = useState('');
+          const [loading, setLoading] = useState(false);
+          const [error, setError] = useState(null);
+          const [data, setData] = useState(null);
+          const [showJson, setShowJson] = useState(false);
+          const [copied, setCopied] = useState(false);
+          const inputRef = useRef(null);
+
+          const cleanCnpj = useMemo(() => onlyDigits(input), [input]);
+          const valid = useMemo(() => isValidCNPJ(cleanCnpj), [cleanCnpj]);
+
+          const summary = useMemo(() => data ? buildSummary(data) : null, [data]);
+          const counters = useMemo(() => data ? countStuff(data) : null, [data]);
+
+          const onChange = (e) => setInput(maskCNPJ(e.target.value));
+
+          const onSearch = useCallback(async () => {
+            setError(null); setData(null);
+            if (cleanCnpj.length === 0){
+              setError('Digite um CNPJ para consultar.');
+              return;
+            }
+            if (!valid){
+              setError('CNPJ invalido. Verifique os digitos e tente novamente.');
+              return;
+            }
+            setLoading(true);
+            try{
+              const url = 'https://publica.cnpj.ws/cnpj/' + cleanCnpj;
+              const resp = await fetchWithTimeout(url, 15000);
+              if (resp.status === 404){
+                throw new Error('CNPJ nao encontrado na base publica.');
+              }
+              if (resp.status === 429){
+                throw new Error('Muitas consultas em pouco tempo (limite da API). Aguarde alguns segundos e tente novamente.');
+              }
+              if (!resp.ok){
+                throw new Error('Falha na consulta (HTTP ' + resp.status + ').');
+              }
+              const json = await resp.json();
+              setData(json);
+            } catch(err){
+              if (err && err.message === 'timeout'){
+                setError('Tempo de resposta excedido. Verifique sua conexao e tente novamente.');
+              } else if (err && /Failed to fetch|NetworkError|TypeError/i.test(err.message||'')){
+                setError('Erro de rede. Verifique sua conexao com a internet.');
+              } else {
+                setError(err && err.message ? err.message : 'Erro inesperado na consulta.');
+              }
+            } finally {
+              setLoading(false);
+            }
+          }, [cleanCnpj, valid]);
+
+          const onKeyDown = (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onSearch();
+            }
+          };
+
+          const copyJson = async () => {
+            try{
+              await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+              setCopied(true);
+              setTimeout(()=> setCopied(false), 1800);
+            } catch(e){
+              // fallback
+              const ta = document.createElement('textarea');
+              ta.value = JSON.stringify(data, null, 2);
+              document.body.appendChild(ta); ta.select();
+              try { document.execCommand('copy'); setCopied(true); setTimeout(()=>setCopied(false),1800); } catch(_){}
+              document.body.removeChild(ta);
+            }
+          };
+
+          // Status chip do CNPJ digitado
+          let chipEl = null;
+          if (cleanCnpj.length === 14){
+            chipEl = valid
+              ? <span className="cnpj-chip cnpj-chip-ok">● Valido</span>
+              : <span className="cnpj-chip cnpj-chip-bad">● Invalido</span>;
+          } else if (cleanCnpj.length > 0){
+            chipEl = <span className="cnpj-chip cnpj-chip-neutral">{cleanCnpj.length}/14 digitos</span>;
+          }
+
+          return (
+            <div style={{display:'flex',flexDirection:'column',gap:16}}>
+              {/* ===== Caixa de consulta ===== */}
+              <div className="cnpj-card">
+                <div className="cnpj-section-title">📥 Nova Consulta</div>
+                <div className="cnpj-muted" style={{marginBottom:14}}>
+                  Consulta gratuita via API publica <code>publica.cnpj.ws</code>. Limite aproximado: 3 consultas/minuto.
+                </div>
+                <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
+                  <div style={{flex:'1 1 280px',minWidth:240}}>
+                    <input
+                      ref={inputRef}
+                      className="cnpj-input"
+                      type="text"
+                      placeholder="00.000.000/0000-00"
+                      value={input}
+                      onChange={onChange}
+                      onKeyDown={onKeyDown}
+                      maxLength={18}
+                      autoComplete="off"
+                      inputMode="numeric"
+                    />
+                  </div>
+                  <button className="cnpj-btn" onClick={onSearch} disabled={loading}>
+                    {loading ? (<><span className="cnpj-spinner"></span> &nbsp;Consultando...</>) : 'Consultar'}
+                  </button>
+                  {data && (
+                    <button className="cnpj-btn-ghost" onClick={()=>setShowJson(true)}>
+                      Ver JSON Bruto
+                    </button>
+                  )}
+                  <div style={{marginLeft:'auto'}}>{chipEl}</div>
+                </div>
+                {error && (
+                  <div className="cnpj-error" style={{marginTop:12}}>
+                    <b>Erro:</b> {error}
+                  </div>
+                )}
+              </div>
+
+              {/* ===== Resumo executivo ===== */}
+              {data && summary && (
+                <div className="cnpj-card">
+                  <div className="cnpj-section-title">
+                    🏢 Resumo Executivo
+                    <span className="cnpj-chip cnpj-chip-ok" style={{marginLeft:8}}>
+                      {(data.estabelecimento && data.estabelecimento.situacao_cadastral) || 'OK'}
+                    </span>
+                  </div>
+                  <div className="cnpj-grid">
+                    {Object.entries(summary).map(([k,v]) => (
+                      <div className="cnpj-kpi" key={k}>
+                        <div className="lbl">{k}</div>
+                        <div className="val">{v || '—'}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ===== Contadores ===== */}
+              {data && counters && (
+                <div className="cnpj-card">
+                  <div className="cnpj-section-title">📊 Estrutura do Retorno</div>
+                  <div className="cnpj-grid-3">
+                    <div className="cnpj-kpi"><div className="lbl">Campos Preenchidos</div><div className="val">{counters.filled}</div></div>
+                    <div className="cnpj-kpi"><div className="lbl">Campos Vazios</div><div className="val">{counters.empty}</div></div>
+                    <div className="cnpj-kpi"><div className="lbl">Objetos Encontrados</div><div className="val">{counters.objects}</div></div>
+                    <div className="cnpj-kpi"><div className="lbl">Listas Encontradas</div><div className="val">{counters.lists}</div></div>
+                  </div>
+                </div>
+              )}
+
+              {/* ===== Renderizacao dinamica completa ===== */}
+              {data && (
+                <div className="cnpj-card">
+                  <div className="cnpj-section-title">🧬 Renderizacao Dinamica do JSON</div>
+                  <div className="cnpj-muted" style={{marginBottom:12}}>
+                    Todos os campos retornados pela API, formatados automaticamente. Objetos e listas podem ser expandidos.
+                  </div>
+                  <DynamicRender name="root" value={data} depth={0} />
+                </div>
+              )}
+
+              {/* Modal JSON Bruto */}
+              {showJson && data && (
+                <div className="cnpj-modal-back" onClick={(e)=>{ if(e.target.classList.contains('cnpj-modal-back')) setShowJson(false); }}>
+                  <div className="cnpj-modal">
+                    <div className="cnpj-modal-head">
+                      <div className="cnpj-section-title" style={{margin:0}}>📄 JSON Bruto</div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button className="cnpj-btn-ghost" onClick={copyJson}>{copied ? '✔ Copiado' : 'Copiar JSON'}</button>
+                        <button className="cnpj-btn-ghost" onClick={()=>setShowJson(false)}>Fechar</button>
+                      </div>
+                    </div>
+                    <div className="cnpj-modal-body">
+                      <pre className="cnpj-json">{JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Estado inicial / dica */}
+              {!data && !loading && !error && (
+                <div className="cnpj-info">
+                  💡 Dica: digite um CNPJ valido e pressione <b>Enter</b> ou clique em <b>Consultar</b>.
+                  Exemplos para teste: <code>00.000.000/0001-91</code> (Banco do Brasil) ou <code>33.000.167/0001-01</code> (Petrobras).
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // Mount lazy: so monta quando a tab CNPJ ficar visivel pela primeira vez
+        let mounted = false;
+        function mountCNPJ(){
+          if (mounted) return;
+          const el = document.getElementById('cnpj-app-root');
+          if (!el) return;
+          mounted = true;
+          const root = ReactDOM.createRoot(el);
+          root.render(<CNPJApp />);
+        }
+        // Hook na ativacao da tab
+        window.__mountCNPJ = mountCNPJ;
+
+        // Se a tab ja estiver aberta no load, monta imediatamente
+        document.addEventListener('DOMContentLoaded', function(){
+          const tab = document.getElementById('tab-cnpj');
+          if (tab && tab.classList.contains('active')) mountCNPJ();
+        });
+        // Observa mudanca de classe (caso DOMContentLoaded ja tenha passado)
+        try{
+          const tab = document.getElementById('tab-cnpj');
+          if (tab){
+            const obs = new MutationObserver(()=>{ if (tab.classList.contains('active')) mountCNPJ(); });
+            obs.observe(tab, {attributes:true, attributeFilter:['class']});
+            if (tab.classList.contains('active')) mountCNPJ();
+          }
+        }catch(e){ /* noop */ }
+      })();
+      </script>
+    </section>
+
 
   </main>
 </div>
@@ -17271,6 +18028,20 @@ function findRow(label){
 
 /* ================== TAB SWITCHING + NAV ================== */
 const TAB_LABELS={
+  'fin-kpis':'KPIs',
+  'fin-sga':'SG&A',
+  'fin-cmv':'CMV por Canal',
+  'fin-dfc':'DFC',
+  'fin-dfc-pr':'DFC Proj × Real',
+  'fin-concil':'Conciliação DFC',
+  'fin-consol':'Consolidação 12-2025',
+  'fin-bp-cont':'Balanço Patrimonial Contábil',
+  'fin-cdg-cont':'Indicadores CDG Contábil',
+  'fin-bp-ger':'Balanço Patrimonial Gerencial',
+  'fin-estoque':'Painel Evolução Estoque',
+  'fin-cdg-ger':'Indicadores CDG Gerencial',
+  'fin-cfo':'Comparativo & Leitura CFO',
+  cnpj:'Consulta CNPJ',
   dre:'DRE Completa',
   'dre-ecom':'DRE Ecommerce',
   taxes:'Dedução de Impostos',
@@ -17281,7 +18052,7 @@ const TAB_LABELS={
   'canais-consolidados':'Canais Consolidados',
   overview:'Visão Geral'
 };
-const TAB_GROUPS={dre:'dre','dre-ecom':'dre',taxes:'dre',compare:'analise','compare-ecom':'analise',products:'operacional',estados:'operacional','canais-consolidados':'operacional',overview:'overview'};
+const TAB_GROUPS={'fin-kpis':'financeiro','fin-sga':'financeiro','fin-cmv':'financeiro','fin-dfc':'financeiro','fin-dfc-pr':'financeiro','fin-concil':'financeiro','fin-consol':'financeiro','fin-bp-cont':'financeiro','fin-cdg-cont':'financeiro','fin-bp-ger':'financeiro','fin-estoque':'financeiro','fin-cdg-ger':'financeiro','fin-cfo':'financeiro','fluxo-caixa':'financeiro',dre:'dre','dre-ecom':'dre',taxes:'dre',compare:'analise','compare-ecom':'analise',products:'operacional',estados:'operacional','canais-consolidados':'operacional',cnpj:'cnpj',overview:'overview'};
 
 const sidebarEl=document.getElementById('sidebar');
 const backdropEl=document.getElementById('backdrop');
@@ -17325,6 +18096,8 @@ function activateTab(tabId){
   if(tabId==='dre-ecom') renderEcomDRE();
   if(tabId==='estados') renderEstados();
   if(tabId==='canais-consolidados') renderCanaisConsolidados();
+  if(typeof FIN_TABS!=='undefined' && FIN_TABS[tabId]) renderFinSheet(tabId);
+  if(tabId==='cnpj' && typeof window.__mountCNPJ==='function') window.__mountCNPJ();
 
   closeDrawer();
   closeAllDropdowns();
@@ -19231,6 +20004,8 @@ async function syncFromGoogleSheets(forceRefresh){
 
     if(payload.error) throw new Error(payload.message || 'Erro no Apps Script');
 
+    if(payload.financeiro && typeof payload.financeiro==='object'){ window.FIN_LIVE = payload.financeiro; }
+
     // Marca para depois mostrar status com info de cache
     const cacheStatus = payload._cacheStatus || 'fresh';
     const cacheTs     = payload._cacheTs;
@@ -20325,5 +21100,237 @@ window.dismissLogin = function(oEl){
   };
 })();
 </script>
+
+<script id="FIN_SNAPSHOT_DATA" type="application/json">{"KPIs": [["LENVIE", "", "", "", "", "", "", "", "", "", ""], ["Painel de KPIs · Indicadores de Desempenho  |  Janeiro – Maio 2026", "", "", "", "", "", "", "", "", "", ""], ["Indicador", "Jan/26", "Fev/26", "Mar/26", "Abr/26", "Mai/26", "YTD 2026", "YTD 2025", "YTD Orçado", "Δ vs 25", "Δ vs Orç"], ["RECEITA & RESULTADO (R$)", "", "", "", "", "", "", "", "", "", ""], ["Receita Bruta", "5.181.815", "4.578.126", "5.371.659", "5.340.063", "5.689.085", "26.160.748", "24.784.293", "29.040.727", "5,60%", "-9,90%"], ["Receita Líquida", "4.083.935", "3.568.474", "4.288.912", "4.259.517", "4.335.744", "20.536.582", "18.987.681", "22.776.583", "8,20%", "-9,80%"], ["Lucro Bruto", "2.152.670", "2.049.670", "2.571.664", "2.491.299", "2.471.167", "11.736.470", "10.697.136", "13.379.715", "9,70%", "-12,30%"], ["EBITDA", "417.014", "218.477", "747.190", "827.462", "654.689", "2.864.830", "3.422.050", "4.065.181", "-16,30%", "-29,50%"], ["EBIT (Operacional)", "417.014", "218.477", "747.190", "827.462", "654.689", "2.864.830", "3.422.050", "4.065.181", "-16,30%", "-29,50%"], ["Lucro Líquido", "417.014", "104.381", "589.994", "76.911", "522.577", "1.710.877", "2.352.011", "3.381.513", "-27,30%", "-49,40%"], ["MARGENS & ESTRUTURA DE CUSTO (%)", "", "", "", "", "", "", "", "", "", ""], ["Margem Bruta", "52,70%", "57,40%", "60,00%", "58,50%", "57,00%", "57,10%", "56,30%", "58,70%", "0,80%", "-1,60%"], ["Margem EBITDA", "10,20%", "6,10%", "17,40%", "19,40%", "15,10%", "13,90%", "18,00%", "17,80%", "-4,10%", "-3,90%"], ["Margem EBIT", "10,20%", "6,10%", "17,40%", "19,40%", "15,10%", "13,90%", "18,00%", "17,80%", "-4,10%", "-3,90%"], ["Margem Líquida", "10,20%", "2,90%", "13,80%", "1,80%", "12,10%", "8,30%", "12,40%", "14,80%", "-4,10%", "-6,50%"], ["Carga Tributária (s/ Receita Bruta)", "19,70%", "21,70%", "19,90%", "18,30%", "21,40%", "20,20%", "23,70%", "21,60%", "-3,50%", "-1,40%"], ["CMV (s/ Receita Líquida)", "47,30%", "42,60%", "40,00%", "41,50%", "43,00%", "42,90%", "43,70%", "41,30%", "-0,80%", "1,60%"], ["Despesas Operacionais (s/ Líquida)", "42,50%", "51,30%", "42,50%", "39,10%", "41,90%", "43,20%", "38,30%", "40,90%", "4,90%", "2,30%"], ["MIX DE RECEITA LÍQUIDA POR CANAL (%)", "", "", "", "", "", "", "", "", "", ""], ["Atacado", "45,10%", "78,70%", "74,60%", "75,70%", "50,10%", "64,50%", "64,40%", "64,40%", "0,10%", "0,20%"], ["E-commerce", "14,70%", "14,00%", "14,70%", "18,10%", "12,10%", "14,80%", "15,60%", "14,50%", "-0,80%", "0,20%"], ["MP – Camicado", "9,10%", "7,20%", "8,70%", "6,20%", "9,80%", "8,20%", "10,20%", "7,30%", "-2,00%", "1,00%"], ["MP – Tok&Stok", "20,50%", "–", "2,00%", "–", "–", "4,50%", "4,60%", "6,10%", "-0,10%", "-1,50%"], ["MP – Vivara", "–", "–", "–", "–", "28,00%", "5,90%", "4,80%", "5,50%", "1,10%", "0,40%"], ["MP – Outras", "10,50%", "–", "–", "–", "–", "2,10%", "0,50%", "2,30%", "1,60%", "-0,20%"], ["MARGEM BRUTA POR CANAL (%)", "", "", "", "", "", "", "", "", "", ""], ["Atacado", "55,00%", "55,30%", "61,60%", "55,50%", "59,20%", "57,50%", "56,60%", "57,60%", "0,90%", "-0,10%"], ["E-commerce", "80,50%", "81,30%", "83,50%", "81,10%", "82,70%", "81,80%", "79,00%", "79,70%", "2,80%", "2,10%"], ["MP – Camicado", "46,30%", "49,60%", "48,70%", "49,80%", "50,70%", "49,00%", "43,30%", "47,40%", "5,70%", "1,60%"], ["MP – Tok&Stok", "37,50%", "–", "38,80%", "–", "–", "37,60%", "34,10%", "42,50%", "3,50%", "-4,90%"], ["MP – Vivara", "–", "–", "–", "–", "49,80%", "49,80%", "43,70%", "52,00%", "6,10%", "-2,20%"], ["MP – Outras", "55,80%", "–", "–", "–", "–", "55,80%", "52,40%", "93,30%", "3,40%", "-37,50%"], ["CAPITAL DE GIRO & LIQUIDEZ (base Gerencial · 2026)", "", "", "", "", "", "", "", "", "", ""], ["PMR — Prazo Médio de Recebimento (dias)", "56,4", "61,6", "53,8", "55,0", "51,3", "51,3", "–", "–", "(5,1)", "–"], ["PME — Prazo Médio de Estoque (dias)", "201,5", "256,7", "262,5", "254,9", "192,2", "192,2", "–", "–", "(9,3)", "–"], ["PMP — Prazo Médio de Pagamento (dias)", "77,3", "86,8", "97,5", "83,8", "75,3", "75,3", "–", "–", "(2,0)", "–"], ["Ciclo Operacional (dias)", "257,8", "318,3", "316,4", "309,9", "243,5", "243,5", "–", "–", "(14,3)", "–"], ["Ciclo Financeiro (dias)", "180,5", "231,4", "218,9", "226,1", "168,2", "168,2", "–", "–", "(12,3)", "–"], ["NCG — Necessidade de Capital de Giro (R$)", "17.832.280", "18.090.555", "19.136.479", "20.350.278", "17.239.637", "17.239.637", "–", "–", "(592.643)", "–"], ["Capital de Giro Líquido — CGL (R$)", "17.973.264", "17.937.232", "18.510.048", "20.759.475", "17.598.586", "17.598.586", "–", "–", "(374.678)", "–"], ["Liquidez Corrente (AC ÷ PC)", "3,40", "3,56", "3,18", "3,58", "3,39", "3,39", "–", "–", "–", "–"], ["Liquidez Seca ((AC−Estoque) ÷ PC)", "1,67", "1,70", "1,41", "1,71", "1,77", "1,77", "–", "–", "–", "–"], ["RETORNO & ENDIVIDAMENTO (base Gerencial · 2026)", "", "", "", "", "", "", "", "", "", ""], ["ROE — Retorno s/ Patrimônio Líquido", "3,70%", "0,90%", "5,60%", "0,70%", "6,40%", "21,10%", "–", "–", "–", "–"], ["ROA — Retorno s/ Ativo", "1,60%", "0,40%", "2,10%", "0,30%", "2,00%", "6,70%", "–", "–", "–", "–"], ["Dívida Bruta (R$)", "8.781.683", "8.714.592", "9.957.574", "12.147.910", "11.288.399", "11.288.399", "–", "–", "2.506.716", "–"], ["Dívida Líquida (R$)", "7.428.440", "7.722.749", "9.465.270", "10.358.962", "9.897.618", "9.897.618", "–", "–", "2.469.178", "–"], ["Dívida Líquida ÷ PL", "0,66", "0,69", "0,91", "0,96", "1,22", "1,22", "–", "–", "–", "–"], ["Dívida Líquida ÷ EBITDA (anualizado)", "1,48x", "2,03x", "1,71x", "1,56x", "1,44x", "1,44x", "–", "–", "–", "–"], ["", "", "", "", "", "", "", "", "", "", ""], ["Bases: KPIs de resultado e margens calculados sobre a DRE (3 cenários + YTD).", "", "", "", "", "", "", "", "", "", ""], ["Carga Tributária = Tributos ÷ Receita Bruta. Demais margens e estrutura ÷ Receita Líquida.", "", "", "", "", "", "", "", "", "", ""], ["Capital de Giro, Liquidez, Retorno e Endividamento usam o Balanço/Indicadores GERENCIAIS (posições mensais de 2026; sem comparativo 2025/Orçado).", "", "", "", "", "", "", "", "", "", ""], ["Δ vs 25 / Δ vs Orç: margens e mix em p.p.; valores em R$ em % de variação. KPIs de balanço: Δ = variação Jan→Mai (coluna Δ vs 25).", "", "", "", "", "", "", "", "", "", ""], ["Dívida Líquida ÷ EBITDA: EBITDA acumulado no ano, anualizado (acumulado até o mês ÷ nº de meses × 12) — evita distorção por meses isolados.", "", "", "", "", "", "", "", "", "", ""]], "SG&A": [["LENVIE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["SG&A · Despesas Operacionais — Evolução, Comparação e Indicadores  |  Jan – Mai 2026", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "JANEIRO", "", "", "FEVEREIRO", "", "", "MARÇO", "", "", "ABRIL", "", "", "MAIO", "", "", "ACUMULADO YTD • JAN–MAI", "", "", "", "", ""], ["Linha / Indicador", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "YTD 2025", "YTD Orç", "YTD 2026", "Δ% vs 25", "Δ% vs Orç", "Desvio Orç (R$)"], ["QUADRO 1 — EVOLUÇÃO MENSAL SG&A (R$) · valores de despesa em módulo", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Gerais e Administrativas", "235.527", "247.714", "391.637", "313.491", "203.441", "350.202", "171.617", "247.178", "333.223", "300.101", "356.000", "327.561", "250.929", "265.350", "261.101", "1.271.664", "1.319.683", "1.663.725", "30,80%", "26,10%", "344.042"], ["Despesas com Pessoal", "408.751", "644.095", "657.697", "441.778", "647.595", "654.427", "529.532", "639.666", "693.403", "463.666", "695.000", "693.585", "504.358", "675.553", "717.101", "2.348.085", "3.301.909", "3.416.213", "45,50%", "3,50%", "114.304"], ["Despesas Comerciais", "475.381", "455.879", "457.726", "618.486", "480.218", "457.316", "535.334", "480.667", "439.592", "572.065", "534.737", "409.266", "575.901", "505.823", "444.311", "2.777.168", "2.457.325", "2.208.212", "-20,50%", "-10,10%", "(249.113)"], ["Despesas de Marketing", "137.712", "229.050", "125.019", "109.911", "369.050", "320.325", "122.461", "229.050", "181.918", "66.767", "193.403", "97.717", "130.966", "213.486", "169.645", "567.817", "1.234.039", "894.624", "57,60%", "-27,50%", "(339.415)"], ["Despesas de E-commerce", "72.353", "203.500", "105.070", "51.028", "165.500", "229.206", "50.979", "204.500", "176.339", "93.253", "178.246", "135.708", "42.739", "174.834", "181.617", "310.353", "926.580", "827.940", "166,80%", "-10,60%", "(98.640)"], ["TOTAL SG&A", "1.329.724", "1.780.238", "1.737.150", "1.534.694", "1.865.804", "2.011.476", "1.409.924", "1.801.061", "1.824.475", "1.495.851", "1.957.386", "1.663.837", "1.504.893", "1.835.045", "1.773.776", "7.275.086", "9.239.535", "9.010.714", "23,90%", "-2,50%", "(228.821)"], ["QUADRO 2 — REPRESENTATIVIDADE (% do total SG&A)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Gerais e Administrativas", "17,70%", "13,90%", "22,50%", "20,40%", "10,90%", "17,40%", "12,20%", "13,70%", "18,30%", "20,10%", "18,20%", "19,70%", "16,70%", "14,50%", "14,70%", "17,50%", "14,30%", "18,50%", "1,00%", "4,20%", "–"], ["Despesas com Pessoal", "30,70%", "36,20%", "37,90%", "28,80%", "34,70%", "32,50%", "37,60%", "35,50%", "38,00%", "31,00%", "35,50%", "41,70%", "33,50%", "36,80%", "40,40%", "32,30%", "35,70%", "37,90%", "5,60%", "2,20%", "–"], ["Despesas Comerciais", "35,80%", "25,60%", "26,30%", "40,30%", "25,70%", "22,70%", "38,00%", "26,70%", "24,10%", "38,20%", "27,30%", "24,60%", "38,30%", "27,60%", "25,00%", "38,20%", "26,60%", "24,50%", "-13,70%", "-2,10%", "–"], ["Despesas de Marketing", "10,40%", "12,90%", "7,20%", "7,20%", "19,80%", "15,90%", "8,70%", "12,70%", "10,00%", "4,50%", "9,90%", "5,90%", "8,70%", "11,60%", "9,60%", "7,80%", "13,40%", "9,90%", "2,10%", "-3,40%", "–"], ["Despesas de E-commerce", "5,40%", "11,40%", "6,00%", "3,30%", "8,90%", "11,40%", "3,60%", "11,40%", "9,70%", "6,20%", "9,10%", "8,20%", "2,80%", "9,50%", "10,20%", "4,30%", "10,00%", "9,20%", "4,90%", "-0,80%", "–"], ["QUADRO 3 — INDICADORES ESTRATÉGICOS", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["SG&A Total ÷ Receita Líquida", "30,70%", "35,90%", "42,50%", "43,10%", "45,80%", "56,40%", "37,40%", "40,50%", "42,50%", "37,00%", "36,90%", "39,10%", "46,00%", "45,80%", "40,90%", "38,30%", "40,60%", "43,90%", "5,60%", "3,30%", "–"], ["Gerais e Administrativas ÷ Receita Líquida", "5,40%", "5,00%", "9,60%", "8,80%", "5,00%", "9,80%", "4,50%", "5,60%", "7,80%", "7,40%", "6,70%", "7,70%", "7,70%", "6,60%", "6,00%", "6,70%", "5,80%", "8,10%", "1,40%", "2,30%", "–"], ["Pessoal ÷ Receita Líquida", "9,40%", "13,00%", "16,10%", "12,40%", "15,90%", "18,30%", "14,00%", "14,40%", "16,20%", "11,50%", "13,10%", "16,30%", "15,40%", "16,90%", "16,50%", "12,40%", "14,50%", "16,60%", "4,30%", "2,10%", "–"], ["Comercial ÷ Receita Líquida", "11,00%", "9,20%", "11,20%", "17,40%", "11,80%", "12,80%", "14,20%", "10,80%", "10,20%", "14,10%", "10,10%", "9,60%", "17,60%", "12,60%", "10,20%", "14,60%", "10,80%", "10,80%", "-3,90%", "0,00%", "–"], ["Marketing ÷ Receita Líquida", "3,20%", "4,60%", "3,10%", "3,10%", "9,10%", "9,00%", "3,20%", "5,20%", "4,20%", "1,70%", "3,60%", "2,30%", "4,00%", "5,30%", "3,90%", "3,00%", "5,40%", "4,40%", "1,40%", "-1,10%", "–"], ["E-commerce ÷ Receita Líquida", "1,70%", "4,10%", "2,60%", "1,40%", "4,10%", "6,40%", "1,40%", "4,60%", "4,10%", "2,30%", "3,40%", "3,20%", "1,30%", "4,40%", "4,20%", "1,60%", "4,10%", "4,00%", "2,40%", "0,00%", "–"], ["Comercial + Marketing ÷ Receita Líquida (GTM)", "14,10%", "13,80%", "14,30%", "20,50%", "20,90%", "21,80%", "17,40%", "16,00%", "14,50%", "15,80%", "13,70%", "11,90%", "21,60%", "18,00%", "14,20%", "17,60%", "16,20%", "15,10%", "-2,50%", "-1,10%", "–"], ["SG&A ÷ Lucro Bruto (consumo do LB)", "55,00%", "62,60%", "80,70%", "72,20%", "77,90%", "98,10%", "69,00%", "67,60%", "70,90%", "65,00%", "62,80%", "66,80%", "83,20%", "77,70%", "71,80%", "68,00%", "69,10%", "76,80%", "8,80%", "7,70%", "–"], ["QUADRO 4 — ALAVANCAGEM OPERACIONAL (YTD 2026 vs 2025)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Crescimento Receita Líquida (YoY)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "8,20%", "", "", ""], ["Crescimento SG&A (YoY)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "23,90%", "", "", ""], ["Alavancagem operacional (p.p. — Receita − SG&A)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "-15,70%", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Valores de despesa apresentados em módulo (positivos); na DRE aparecem como dedução (negativos).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Quadro 3 — bases: cada linha e o total ÷ Receita Líquida; SG&A ÷ Lucro Bruto mede quanto do lucro bruto é consumido pelo SG&A.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Quadro 4 — Alavancagem operacional positiva = Receita cresce mais que o SG&A (ganho de eficiência); negativa = SG&A cresce acima da receita.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Desvio Orç (R$) = YTD 2026 − YTD Orçado (positivo = gasto acima do orçado).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Total SG&A = soma das 5 linhas; pode divergir marginalmente da linha de Despesas da DRE em 3 meses de 2026 por reclassificações na base.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]], "CMV por Canal": [["LENVIE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["CMV por Canal — Evolução, Comparação e Análise Estratégica  |  Jan – Mai 2026", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "JANEIRO", "", "", "FEVEREIRO", "", "", "MARÇO", "", "", "ABRIL", "", "", "MAIO", "", "", "ACUMULADO YTD • JAN–MAI", "", "", "", "", ""], ["Canal / Indicador", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "2025", "Orç", "2026", "YTD 2025", "YTD Orç", "YTD 2026", "Δ% vs 25", "Δ% vs Orç", "Desvio Orç (R$)"], ["QUADRO 1 — EVOLUÇÃO MENSAL DO CMV POR CANAL (R$) · valores em módulo", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Atacado", "1.160.937", "1.160.937", "830.564", "1.047.146", "1.347.146", "1.254.068", "1.028.963", "1.158.963", "1.228.736", "1.204.883", "1.386.315", "1.433.931", "864.000", "1.156.803", "886.237", "5.305.929", "6.210.164", "5.633.537", "6,20%", "-9,30%", "(576.627)"], ["E-commerce", "140.164", "120.164", "117.081", "93.949", "123.949", "93.522", "145.894", "145.894", "103.460", "131.331", "146.023", "145.551", "108.648", "136.184", "90.944", "619.987", "672.215", "550.558", "-11,20%", "-18,10%", "(121.656)"], ["MP – Vivara", "73.311", "–", "–", "35.025", "–", "–", "71.815", "–", "–", "170.055", "478.362", "–", "161.275", "125.248", "607.844", "511.481", "603.610", "607.844", "18,80%", "0,70%", "4.234"], ["MP – Tok&Stok", "236.373", "566.373", "523.868", "63.206", "–", "–", "135.086", "226.373", "53.833", "84.351", "–", "–", "51.574", "–", "–", "570.590", "792.745", "577.700", "1,20%", "-27,10%", "(215.045)"], ["MP – Camicado", "248.375", "189.375", "200.362", "195.769", "165.000", "130.495", "346.022", "206.022", "190.559", "141.997", "125.804", "132.752", "165.724", "182.813", "209.566", "1.097.887", "869.015", "863.734", "-21,30%", "-0,60%", "(5.280)"], ["MP – Outras", "–", "35.025", "188.989", "–", "–", "–", "–", "–", "–", "2.741", "–", "–", "39.592", "–", "–", "42.333", "35.025", "188.989", "346,40%", "439,60%", "153.964"], ["Frete de Operação", "62.318", "30.000", "64.073", "–", "30.000", "35.025", "–", "30.000", "131.503", "6.160", "53.070", "47.711", "73.860", "41.024", "63.744", "142.338", "184.094", "342.056", "140,30%", "85,80%", "157.962"], ["TOTAL CMV (canais exibidos)", "1.921.478", "2.101.874", "1.924.938", "1.435.095", "1.666.095", "1.513.110", "1.727.780", "1.767.252", "1.708.091", "1.741.518", "2.189.574", "1.759.945", "1.464.675", "1.642.072", "1.858.335", "8.290.545", "9.366.867", "8.764.418", "5,70%", "-6,40%", "(602.449)"], ["QUADRO 2 — REPRESENTATIVIDADE (% do total CMV)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Atacado", "60,40%", "55,20%", "43,10%", "73,00%", "80,90%", "82,90%", "59,60%", "65,60%", "71,90%", "69,20%", "63,30%", "81,50%", "59,00%", "70,40%", "47,70%", "64,00%", "66,30%", "64,30%", "0,30%", "-2,00%", "–"], ["E-commerce", "7,30%", "5,70%", "6,10%", "6,50%", "7,40%", "6,20%", "8,40%", "8,30%", "6,10%", "7,50%", "6,70%", "8,30%", "7,40%", "8,30%", "4,90%", "7,50%", "7,20%", "6,30%", "-1,20%", "-0,90%", "–"], ["MP – Vivara", "3,80%", "–", "–", "2,40%", "–", "–", "4,20%", "–", "–", "9,80%", "21,80%", "–", "11,00%", "7,60%", "32,70%", "6,20%", "6,40%", "6,90%", "0,80%", "0,50%", "–"], ["MP – Tok&Stok", "12,30%", "26,90%", "27,20%", "4,40%", "–", "–", "7,80%", "12,80%", "3,20%", "4,80%", "–", "–", "3,50%", "–", "–", "6,90%", "8,50%", "6,60%", "-0,30%", "-1,90%", "–"], ["MP – Camicado", "12,90%", "9,00%", "10,40%", "13,60%", "9,90%", "8,60%", "20,00%", "11,70%", "11,20%", "8,20%", "5,70%", "7,50%", "11,30%", "11,10%", "11,30%", "13,20%", "9,30%", "9,90%", "-3,40%", "0,60%", "–"], ["MP – Outras", "–", "1,70%", "9,80%", "–", "–", "–", "–", "–", "–", "0,20%", "–", "–", "2,70%", "–", "–", "0,50%", "0,40%", "2,20%", "1,60%", "1,80%", "–"], ["Frete de Operação", "3,20%", "1,40%", "3,30%", "–", "1,80%", "2,30%", "–", "1,70%", "7,70%", "0,40%", "2,40%", "2,70%", "5,00%", "2,50%", "3,40%", "1,70%", "2,00%", "3,90%", "2,20%", "1,90%", "–"], ["QUADRO 3 — CMV ÷ RECEITA LÍQUIDA (intensidade de custo)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["CMV Total ÷ Receita Líquida", "44,30%", "42,40%", "47,10%", "40,30%", "40,90%", "42,40%", "45,80%", "39,80%", "39,80%", "43,10%", "41,30%", "41,30%", "44,70%", "41,00%", "42,90%", "43,70%", "41,10%", "42,70%", "-1,00%", "1,60%", "–"], ["Atacado (÷ RL do canal)", "40,10%", "45,00%", "45,00%", "41,20%", "41,50%", "44,70%", "48,40%", "40,30%", "38,40%", "44,50%", "42,00%", "44,50%", "43,90%", "43,60%", "40,80%", "43,40%", "42,40%", "42,50%", "-0,90%", "0,10%", "–"], ["E-commerce (÷ RL do canal)", "24,30%", "20,20%", "19,50%", "19,00%", "22,10%", "18,70%", "19,80%", "19,60%", "16,50%", "21,80%", "20,00%", "18,90%", "19,90%", "20,00%", "17,30%", "21,00%", "20,30%", "18,20%", "-2,80%", "-2,10%", "–"], ["MP – Vivara (÷ RL do canal)", "54,90%", "–", "–", "48,80%", "–", "–", "57,70%", "–", "–", "54,80%", "48,00%", "–", "59,90%", "48,00%", "50,20%", "56,30%", "48,00%", "50,20%", "-6,10%", "2,20%", "–"], ["MP – Tok&Stok (÷ RL do canal)", "87,50%", "60,20%", "62,50%", "63,00%", "–", "–", "61,50%", "51,80%", "61,20%", "45,80%", "–", "–", "55,90%", "–", "–", "65,90%", "57,50%", "62,40%", "-3,50%", "4,90%", "–"], ["MP – Camicado (÷ RL do canal)", "53,20%", "59,00%", "53,70%", "56,20%", "63,40%", "50,40%", "61,00%", "53,50%", "51,30%", "59,70%", "45,00%", "50,20%", "52,60%", "45,00%", "49,30%", "56,70%", "52,60%", "51,00%", "-5,70%", "-1,60%", "–"], ["MP – Outras (÷ RL do canal)", "–", "6,70%", "44,20%", "–", "–", "–", "–", "–", "–", "80,40%", "–", "–", "46,30%", "–", "–", "47,60%", "6,70%", "44,20%", "-3,40%", "37,50%", "–"], ["Frete de Operação (÷ RL total)", "1,40%", "0,60%", "1,60%", "–", "0,70%", "1,00%", "–", "0,70%", "3,10%", "0,20%", "1,00%", "1,10%", "2,30%", "1,00%", "1,50%", "0,70%", "0,80%", "1,70%", "0,90%", "0,90%", "–"], ["ANÁLISE ESTRATÉGICA — O QUE PUXA O CMV", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  CMV total controlado: R$ 8,76 mi YTD, +5,7% vs 2025 mas −6,4% abaixo do orçado. CMV ÷ Receita Líquida em 42,7% (vs 43,7% em 2025) — leve ganho de eficiência e margem bruta preservada.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Atacado é o motor do CMV: ~64% do total (R$ 5,63 mi). Cresceu +6,2% vs 2025 acompanhando a receita, mas veio 9,3% abaixo do orçado. Intensidade de 42,5% (em linha com a média) — define o resultado consolidado.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  PUXANDO PARA CIMA — Frete de Operação é o maior ofensor relativo: +140% vs 2025 e +86% acima do orçado (R$ 342 mil vs 142 mil). Pequeno em valor, mas é a linha que mais pressiona; investigar custo logístico/fornecedor. MP – Outras +346% (base pequena, concentrada em Janeiro).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  PUXANDO PARA BAIXO — Camicado (−21% vs 2025) e E-commerce (−11%) reduziram custo; Tok&Stok veio 27% abaixo do orçado. Esses canais aliviaram o CMV total.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Intensidade por canal (CMV ÷ RL): E-commerce 18,2% é o de melhor margem bruta; marketplaces pressionam — Tok&Stok 62,4%, Camicado 51,0%, Vivara 50,2%. Migrar mix para E-commerce e Atacado melhora a margem bruta consolidada.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Atenção contábil: vários marketplaces têm CMV reconhecido em meses isolados (Tok&Stok em Jan/Mar, Vivara só em Mai, Outras só em Jan) — indica alocação por lotes, não fluxo mensal. Recomendo provisionar/ratear o CMV mensalmente para leitura gerencial mais fiel.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Nota: o CMV oficial da DRE inclui também SAC (R$ 35,7k YTD), não exibido aqui; por isso o total desta aba é marginalmente menor. Valores de custo em módulo (positivos).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]], "DFC": [["LENVIE", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Demonstração do Fluxo de Caixa (DFC) — Método Direto e Indireto  |  2026 (Realizado Jan–Mai · Projetado Jun–Dez)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Conta", "Jan/26 R", "Fev/26 R", "Mar/26 R", "Abr/26 R", "Mai/26 R", "YTD Real", "YTD Proj", "Δ% R/P", "Jun/26 P", "Jul/26 P", "Ago/26 P", "Set/26 P", "Out/26 P", "Nov/26 P", "Dez/26 P", "Ano 2026"], ["MÉTODO DIRETO — FLUXO DE CAIXA DA TESOURARIA", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["SALDO INICIAL DE CAIXA", "1.466.251", "1.389.076", "1.350.563", "415.160", "1.374.528", "1.466.251", "1.353.243", "8,40%", "1.503.789", "(334.208)", "(328.288)", "(242.884)", "754.575", "2.075.993", "2.621.915", "1.466.251"], ["(1) ATIVIDADES OPERACIONAIS (FCO)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(+) Recebimentos de clientes", "5.153.188", "4.486.810", "4.993.152", "5.403.786", "5.294.449", "25.331.385", "24.114.345", "5,00%", "3.501.158", "5.066.954", "5.065.545", "6.799.060", "6.325.868", "5.598.037", "6.236.614", "63.924.621"], ["(+) Receitas financeiras", "58", "71", "28", "11", "1.224", "1.392", "–", "–", "–", "–", "–", "–", "–", "–", "–", "1.392"], ["(+) Devoluções de compra", "–", "–", "–", "80.157", "–", "80.157", "–", "–", "–", "–", "–", "–", "–", "–", "–", "80.157"], ["(+) Adiantamento de clientes", "–", "16.373", "–", "–", "–", "16.373", "–", "–", "–", "–", "–", "–", "–", "–", "–", "16.373"], ["(–) Fornecedores", "(2.365.477)", "(2.628.989)", "(3.444.580)", "(3.145.484)", "(2.526.163)", "(14.110.692)", "(12.433.734)", "13,50%", "(2.579.214)", "(2.196.000)", "(2.323.000)", "(2.694.000)", "(2.351.000)", "(2.173.000)", "(1.833.000)", "(30.259.906)"], ["(–) Tributos sobre vendas", "(486.432)", "(742.606)", "(954.344)", "(579.497)", "(800.601)", "(3.563.479)", "(4.710.439)", "-24,30%", "(879.909)", "(921.000)", "(721.000)", "(721.000)", "(721.000)", "(721.000)", "(721.000)", "(8.969.388)"], ["(–) Pessoal", "(774.650)", "(708.568)", "(737.129)", "(797.735)", "(770.900)", "(3.788.982)", "(3.443.775)", "10,00%", "(744.356)", "(683.050)", "(683.050)", "(683.050)", "(683.050)", "(823.050)", "(855.050)", "(8.943.641)"], ["(–) Despesas administrativas (G&A)", "(269.841)", "(324.384)", "(284.342)", "(323.662)", "(243.729)", "(1.445.958)", "(1.064.758)", "35,80%", "(314.807)", "(338.075)", "(283.075)", "(283.075)", "(283.075)", "(281.972)", "(331.972)", "(3.562.007)"], ["(–) Despesas comerciais", "(250.486)", "(250.696)", "(158.027)", "(256.603)", "(255.043)", "(1.170.855)", "(1.489.941)", "-21,40%", "(354.615)", "(224.574)", "(260.574)", "(224.574)", "(224.574)", "(224.574)", "(224.574)", "(2.908.912)"], ["(–) Despesas de marketing", "(221.823)", "(184.690)", "(191.892)", "(153.694)", "(172.075)", "(924.174)", "(1.311.715)", "-29,50%", "(170.536)", "(260.000)", "(260.000)", "(260.000)", "(260.000)", "(260.000)", "(260.000)", "(2.654.710)"], ["(–) Despesas de eventos", "(67.286)", "(70.856)", "(115.836)", "(100.710)", "(71.211)", "(425.899)", "(312.356)", "36,40%", "(37.738)", "(63.056)", "(63.056)", "(63.056)", "(63.056)", "(63.056)", "(63.056)", "(841.973)"], ["(–) Tecnologia", "(82.704)", "(104.229)", "(109.410)", "(126.022)", "(136.766)", "(559.131)", "(366.704)", "52,50%", "(110.564)", "(71.000)", "(71.000)", "(71.000)", "(71.000)", "(71.000)", "(71.000)", "(1.095.695)"], ["(–) Viagens e deslocamentos", "(7.801)", "(13.794)", "(14.078)", "(13.725)", "(10.439)", "(59.838)", "(9.721)", "515,50%", "(517)", "–", "–", "–", "–", "–", "–", "(60.355)"], ["(–) Desenvolvimento / P&D", "(25.299)", "(25.207)", "(22.135)", "(29.009)", "(20.569)", "(122.219)", "(120.600)", "1,30%", "(24.950)", "(24.000)", "(24.000)", "(24.000)", "(24.000)", "(24.000)", "(24.000)", "(291.169)"], ["(–) Royalties", "(18.764)", "(20.931)", "–", "–", "(5.775)", "(45.471)", "(18.410)", "147,00%", "(17.163)", "(28.000)", "(28.000)", "(28.000)", "(28.000)", "–", "(28.000)", "(202.634)"], ["(–) Tarifas bancárias e adquirente", "(5.879)", "(4.252)", "(4.727)", "(22.826)", "(5.014)", "(42.698)", "(68)", "62.932,30%", "–", "–", "–", "–", "–", "–", "–", "(42.698)"], ["(–) Impostos sobre o lucro", "(453.941)", "–", "–", "(462.691)", "–", "(916.632)", "(800.000)", "14,60%", "–", "–", "–", "(400.000)", "–", "–", "–", "(1.316.632)"], ["(–) Outras saídas operacionais (concil.)", "–", "–", "–", "–", "–", "–", "(15.048)", "-100,00%", "–", "–", "–", "–", "–", "–", "–", "–"], ["(=) CAIXA DAS ATIVIDADES OPERACIONAIS (FCO)", "122.863", "(575.949)", "(1.043.319)", "(527.703)", "277.386", "(1.746.722)", "(1.982.925)", "-11,90%", "(1.733.211)", "258.199", "348.790", "1.347.305", "1.617.113", "956.385", "1.824.962", "2.872.822"], ["(2) ATIVIDADES DE INVESTIMENTO (FCI)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(–) Investimentos (sem CAPEX relevante no período)", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(=) CAIXA DE INVESTIMENTOS (FCI)", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(3) ATIVIDADES DE FINANCIAMENTO (FCF)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(+) Captação de empréstimos e financiamentos", "–", "–", "3.000.000", "2.600.000", "–", "5.600.000", "–", "–", "–", "–", "–", "–", "–", "–", "–", "5.600.000"], ["(+) Antecipação de recebíveis", "–", "700.000", "–", "–", "–", "700.000", "1.985.000", "-64,70%", "–", "–", "–", "–", "–", "–", "–", "700.000"], ["(+) Entrada de mútuos", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(–) Amortização de empréstimos e financiamentos", "(85.659)", "–", "(2.744.927)", "(424.346)", "–", "(3.254.933)", "(387.253)", "740,50%", "(50.000)", "(110.476)", "(122.958)", "(187.009)", "(186.789)", "(188.140)", "(187.936)", "(4.288.242)"], ["(–) Amortização de mútuos", "(12.091)", "(12.091)", "(12.091)", "(338.984)", "(12.091)", "(387.349)", "(424.115)", "-8,70%", "(12.091)", "–", "–", "–", "–", "(91.893)", "–", "(491.332)"], ["(–) Juros sobre empréstimos e financiamentos", "(99.358)", "(147.590)", "(101.431)", "(182.275)", "(132.487)", "(663.141)", "(581.959)", "13,90%", "(40.226)", "(140.422)", "(139.198)", "(161.759)", "(107.979)", "(106.628)", "(106.832)", "(1.466.184)"], ["(–) Juros sobre mútuos", "(2.913)", "(2.761)", "(33.610)", "(40.941)", "(3.245)", "(83.470)", "(55.912)", "49,30%", "(2.469)", "(1.381)", "(1.230)", "(1.078)", "(927)", "(23.802)", "(4.252)", "(118.610)"], ["(–) IOF", "(17)", "(122)", "(25)", "(126.383)", "(302)", "(126.848)", "–", "–", "–", "–", "–", "–", "–", "–", "–", "(126.848)"], ["(–) Dividendos", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(=) CAIXA DE FINANCIAMENTO (FCF)", "(200.038)", "537.436", "107.916", "1.487.072", "(148.125)", "1.784.260", "535.762", "233,00%", "(104.786)", "(252.279)", "(263.385)", "(349.846)", "(295.695)", "(410.463)", "(299.020)", "(191.216)"], ["(=) GERAÇÃO DE CAIXA (FCO + FCI + FCF)", "(77.175)", "(38.513)", "(935.403)", "959.368", "129.261", "37.538", "(1.447.163)", "-102,60%", "(1.837.997)", "5.920", "85.404", "997.458", "1.321.418", "545.922", "1.525.942", "2.681.606"], ["SALDO FINAL DE CAIXA", "1.389.076", "1.350.563", "415.160", "1.374.528", "1.503.789", "1.503.789", "(93.920)", "–", "(334.208)", "(328.288)", "(242.884)", "754.575", "2.075.993", "2.621.915", "4.147.857", "4.147.857"], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["MÉTODO INDIRETO — CONCILIAÇÃO DO RESULTADO AO CAIXA (base CONTÁBIL · acum. Jan–Mai)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(=) Lucro Líquido (DRE, Jan–Mai)", "", "", "", "", "", "1.710.877", "", "", "", "", "", "", "", "", "", ""], ["(+) Depreciação", "", "", "", "", "", "12.626", "", "", "", "", "", "", "", "", "", ""], ["(+) Amortização (Intangível)", "", "", "", "", "", "33.605", "", "", "", "", "", "", "", "", "", ""], ["(–) Aumento de Clientes", "", "", "", "", "", "7.469", "", "", "", "", "", "", "", "", "", ""], ["(–) Aumento de Estoques (físico)", "", "", "", "", "", "(1.469.521)", "", "", "", "", "", "", "", "", "", ""], ["(–) Aumento de Adiantamentos", "", "", "", "", "", "(200.056)", "", "", "", "", "", "", "", "", "", ""], ["(–) Aumento de Impostos a Recuperar", "", "", "", "", "", "(4.818)", "", "", "", "", "", "", "", "", "", ""], ["(–) Aumento de Outros Créditos", "", "", "", "", "", "(191.789)", "", "", "", "", "", "", "", "", "", ""], ["(–) Redução de Fornecedores", "", "", "", "", "", "(296.472)", "", "", "", "", "", "", "", "", "", ""], ["(+) Aumento de Obrigações Tributárias", "", "", "", "", "", "244.219", "", "", "", "", "", "", "", "", "", ""], ["(+) Aumento de Obrigações Trabalhistas", "", "", "", "", "", "10.355", "", "", "", "", "", "", "", "", "", ""], ["(=) CAIXA OPERACIONAL — FCO (base contábil)", "", "", "", "", "", "(143.505)", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["CONCILIAÇÃO MÉTODO DIRETO × INDIRETO (FCO · YTD Jan–Mai)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["FCO — Método Direto (tesouraria)", "", "", "", "", "", "(1.746.722)", "", "", "", "", "", "", "", "", "", ""], ["FCO — Método Indireto (base contábil)", "", "", "", "", "", "(143.505)", "", "", "", "", "", "", "", "", "", ""], ["Divergência (regime de competência × caixa)", "", "", "", "", "", "1.603.217", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["MEMO — IMPACTO DO AJUSTE GERENCIAL DE ESTOQUE (não-caixa)", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Estoque: Gerencial − Contábil (Mai/26)", "", "", "", "", "", "–", "", "", "", "", "", "", "", "", "", ""], ["Lucros Acumulados: Gerencial − Contábil (Mai/26)", "", "", "", "", "", "(9.932.370)", "", "", "", "", "", "", "", "", "", ""], ["→ Distorção evitada no FCO ao usar base contábil", "", "", "", "", "", "–", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["📊 LEITURA EXECUTIVA & ANÁLISE — CFO", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  CAIXA SUSTENTADO POR DÍVIDA: o caixa operacional (FCO) da tesouraria foi NEGATIVO em R$ 1,75 mi (Jan–Mai). O saldo só fechou positivo (+R$ 1,39 mi) graças a R$ 6,3 mi de captação (R$ 5,6 mi de empréstimos + R$ 0,7 mi de antecipação). A operação não gera caixa próprio — depende de capital de terceiros.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  ABERTURA ALINHADA AO BALANÇO AUDITADO: a abertura de 2026 foi ajustada para o caixa CONSOLIDADO auditado de 31/12/2025 (R$ 1.466.251). A diferença de R$ 113 mil vs a base de tesouraria (FRI) corresponde ao caixa da AURA — o modelo de fluxo 2026 está em base FRI isolada. Para fechamento pleno (e para o Saldo Final refletir o grupo), é necessário consolidar a AURA também nos fluxos de 2026.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  REALIZADO MELHOR QUE O PLANO — MAS VIA DÍVIDA: o projetado previa consumo de R$ 1,45 mi (Jan–Mai); o realizado fechou em +R$ 38 mil. A diferença vem de captação não planejada, não de melhora operacional — o FCO seguiu negativo (−R$ 1,75 mi).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  RESULTADO VIRA CAIXA NA CONTABILIDADE, NÃO NA TESOURARIA: na base CONTÁBIL (estoque físico real), o FCO indireto é −R$ 0,14 mi. A divergência para o FCO de tesouraria (−R$ 1,75 mi) é R$ 1,60 mi, de regime de competência × caixa — principalmente timing de pagamento a fornecedores. O check de caixa (tesouraria × Balanço) está conciliado após o ajuste de R$ 145.805 (Clientes→Caixa).", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  AJUSTE DE ESTOQUE CONFIRMADO (NÃO-CAIXA): o ajuste gerencial reduziu o estoque em R$ 2,49 mi contra Lucros Acumulados. Por ser não-caixa, NÃO entra no fluxo — o indireto usa a base contábil. Recomendação de reclassificação no PL gerencial nos próximos passos.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["✅ PRÓXIMOS PASSOS", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Plano de geração de caixa operacional: o FCO negativo (−R$ 1,75 mi) não pode depender de captação — revisar PMR/PMP, reduzir estoque físico e contingenciar despesas.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Reclassificar o ajuste de estoque no PL gerencial: mover os R$ 2,49 mi de Lucros Acumulados para uma reserva específica 'Ajuste Gerencial de Estoque', mantendo o PL total inalterado e os Lucros Acumulados articulados com o resultado.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Padronizar o método indireto sobre a base contábil (estoque físico) — nunca a gerencial, que contém o ajuste não-caixa.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Renegociar dívida e custo financeiro: empréstimos (R$ 5,6 mi) e juros/amortizações consomem caixa; alongar perfil e reduzir antecipações caras.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Reprojetar o forecast Jun–Dez com premissas realistas, sem assumir captação nova para fechar o caixa.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["Fonte: 'Fluxo de Caixa Projetado x Realizado - Maio.xlsx' (método direto, tesouraria; captação de 03/26 corrigida para R$ 2,0 mi). Indireto e memo calculados sobre DRE + Balanço Contábil/Gerencial deste arquivo.", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]], "DFC Proj x Real": [["LENVIE", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["DFC — Projetado × Realizado  |  Janeiro – Maio 2026  ·  o que descolou", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "Jan/26", "", "Fev/26", "", "Mar/26", "", "Abr/26", "", "Mai/26", "", "ACUMULADO JAN–MAI", "", "", ""], ["Conta", "Proj", "Real", "Proj", "Real", "Proj", "Real", "Proj", "Real", "Proj", "Real", "Proj", "Real", "Desvio R$", "Desvio %"], ["SALDO INICIAL DE CAIXA", "1.353.243", "1.353.243", "1.276.068", "1.276.068", "937.555", "937.555", "402.152", "402.152", "1.361.520", "1.361.520", "1.353.243", "1.353.243", "–", "–"], ["(1) OPERACIONAL (FCO)", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(+) Recebimentos de clientes", "5.469.965", "5.153.188", "4.251.838", "4.486.810", "3.637.461", "4.993.152", "4.843.196", "5.403.786", "5.911.886", "5.294.449", "24.114.345", "25.331.385", "1.217.040", "5,00%"], ["(+) Receitas financeiras", "–", "58", "–", "71", "–", "28", "–", "11", "–", "1.224", "–", "1.392", "1.392", "–"], ["(+) Devoluções de compra", "–", "–", "–", "–", "–", "–", "–", "80.157", "–", "–", "–", "80.157", "80.157", "–"], ["(+) Adiantamento de clientes", "–", "–", "–", "16.373", "–", "–", "–", "–", "–", "–", "–", "16.373", "16.373", "–"], ["(–) Fornecedores", "(2.196.000)", "(2.365.477)", "(2.206.915)", "(2.628.989)", "(2.447.819)", "(3.444.580)", "(2.549.000)", "(3.145.484)", "(3.034.000)", "(2.526.163)", "(12.433.734)", "(14.110.692)", "(1.676.958)", "13,50%"], ["(–) Tributos sobre vendas", "(1.024.200)", "(486.432)", "(873.239)", "(742.606)", "(971.000)", "(954.344)", "(921.000)", "(579.497)", "(921.000)", "(800.601)", "(4.710.439)", "(3.563.479)", "1.146.960", "-24,30%"], ["(–) Pessoal", "(683.115)", "(774.650)", "(636.557)", "(708.568)", "(718.722)", "(737.129)", "(758.050)", "(797.735)", "(647.379)", "(770.900)", "(3.443.823)", "(3.788.982)", "(345.159)", "10,00%"], ["(–) Despesas administrativas (G&A)", "(240.532)", "(269.841)", "(238.934)", "(324.384)", "(211.191)", "(284.342)", "(178.746)", "(323.662)", "(195.354)", "(243.729)", "(1.064.758)", "(1.445.958)", "(381.200)", "35,80%"], ["(–) Despesas comerciais", "(224.574)", "(250.486)", "(368.646)", "(250.696)", "(441.574)", "(158.027)", "(224.574)", "(256.603)", "(230.574)", "(255.043)", "(1.489.941)", "(1.170.855)", "319.086", "-21,40%"], ["(–) Despesas de marketing", "(356.041)", "(221.823)", "(225.674)", "(184.690)", "(210.000)", "(191.892)", "(260.000)", "(153.694)", "(260.000)", "(172.075)", "(1.311.715)", "(924.174)", "387.541", "-29,50%"], ["(–) Despesas de eventos", "(63.056)", "(67.286)", "(60.132)", "(70.856)", "(63.056)", "(115.836)", "(63.056)", "(100.710)", "(63.056)", "(71.211)", "(312.356)", "(425.899)", "(113.542)", "36,40%"], ["(–) Tecnologia", "(71.000)", "(82.704)", "(82.704)", "(104.229)", "(71.000)", "(109.410)", "(71.000)", "(126.022)", "(71.000)", "(136.766)", "(366.704)", "(559.131)", "(192.427)", "52,50%"], ["(–) Viagens e deslocamentos", "(6.000)", "(7.801)", "(2.883)", "(13.794)", "(838)", "(14.078)", "–", "(13.725)", "–", "(10.439)", "(9.721)", "(59.838)", "(50.117)", "515,50%"], ["(–) Desenvolvimento / P&D", "(24.000)", "(25.299)", "(24.600)", "(25.207)", "(24.000)", "(22.135)", "(24.000)", "(29.009)", "(24.000)", "(20.569)", "(120.600)", "(122.219)", "(1.619)", "1,30%"], ["(–) Royalties", "–", "(18.764)", "(5.410)", "(20.931)", "–", "–", "(28.000)", "–", "–", "(5.775)", "(33.410)", "(45.471)", "(12.061)", "36,10%"], ["(–) Tarifas bancárias e adquirente", "–", "(5.879)", "(68)", "(4.252)", "–", "(4.727)", "–", "(22.826)", "–", "(5.014)", "(68)", "(42.698)", "(42.630)", "62.932,30%"], ["(–) Impostos sobre o lucro", "(400.000)", "(453.941)", "–", "–", "–", "–", "(400.000)", "(462.691)", "–", "–", "(800.000)", "(916.632)", "(116.632)", "14,60%"], ["(–) Outras saídas operacionais (concil.)", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(=) FCO", "181.447", "122.863", "(473.925)", "(575.949)", "(1.521.739)", "(1.043.319)", "(634.230)", "(527.703)", "465.523", "277.386", "(1.982.925)", "(1.746.722)", "236.203", "-11,90%"], ["(3) FINANCIAMENTO (FCF)", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["(+) Captação de empréstimos e financiamentos", "–", "–", "–", "–", "–", "3.000.000", "–", "2.600.000", "–", "–", "–", "5.600.000", "5.600.000", "–"], ["(+) Antecipação de recebíveis", "–", "–", "85.000", "700.000", "1.000.000", "–", "500.000", "–", "400.000", "–", "1.985.000", "700.000", "(1.285.000)", "-64,70%"], ["(+) Entrada de mútuos", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(–) Amortização de empréstimos e financiamentos", "(12.091)", "(85.659)", "(62.091)", "–", "(89.869)", "(2.744.927)", "(55.555)", "(424.346)", "(167.647)", "–", "(387.253)", "(3.254.933)", "(2.867.680)", "740,50%"], ["(–) Amortização de mútuos", "–", "(12.091)", "(12.091)", "(12.091)", "(12.091)", "(12.091)", "(212.091)", "(338.984)", "(187.841)", "(12.091)", "(424.115)", "(387.349)", "36.766", "-8,70%"], ["(–) Juros sobre empréstimos e financiamentos", "(142.190)", "(99.358)", "(99.358)", "(147.590)", "(99.000)", "(101.431)", "(107.599)", "(182.275)", "(133.812)", "(132.487)", "(581.959)", "(663.141)", "(81.182)", "13,90%"], ["(–) Juros sobre mútuos", "(2.913)", "(2.913)", "(1.511)", "(2.761)", "(2.610)", "(33.610)", "(31.119)", "(40.941)", "(17.758)", "(3.245)", "(55.912)", "(83.470)", "(27.559)", "49,30%"], ["(–) IOF", "–", "(17)", "–", "(122)", "–", "(25)", "–", "(126.383)", "–", "(302)", "–", "(126.848)", "(126.848)", "–"], ["(–) Dividendos", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–", "–"], ["(=) FCF", "(157.194)", "(200.038)", "(90.052)", "537.436", "796.430", "107.916", "93.636", "1.487.072", "(107.058)", "(148.125)", "535.762", "1.784.260", "1.248.498", "233,00%"], ["(=) GERAÇÃO DE CAIXA", "24.253", "(77.175)", "(563.977)", "(38.513)", "(725.309)", "(935.403)", "(540.594)", "959.368", "358.465", "129.261", "(1.447.163)", "37.538", "1.484.701", "-102,60%"], ["SALDO FINAL DE CAIXA", "1.377.496", "1.276.068", "712.091", "1.237.555", "212.245", "2.152", "(138.442)", "1.361.520", "1.719.985", "1.490.781", "(93.920)", "1.390.781", "1.484.701", "-1.580,80%"], ["", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["📊 ONDE DESCOLOU (acum. Jan–Mai)", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Recebimentos: realizado R$ 25,3 mi vs projetado R$ 24,1 mi (+R$ 1,2 mi) — entradas acima do plano.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Fornecedores: maior desembolso do período; pagamentos realizados acima do projetado pressionaram o FCO.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Juros e despesas financeiras vieram acima do plano, elevando o custo do serviço da dívida.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  FCO ficou negativo (−R$ 1,75 mi) vs plano também negativo (−R$ 1,45 mi): a operação consumiu mais caixa que o previsto.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  FCF muito acima do plano (+R$ 1,78 mi vs negativo projetado): captação de empréstimos não prevista sustentou o caixa.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""], ["•  Resultado: Geração realizada +R$ 38 mil vs projetada −R$ 1,45 mi — diferença explicada por dívida, não por operação.", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]], "Conciliação DFC": [["LENVIE", "", ""], ["Conciliação da DFC — Ponte Lucro→Caixa, Direto×Indireto e Check de Caixa  |  Acum. Jan–Mai 2026", "", ""], ["Item", "Valor (R$)", "% s/ Lucro Líq."], ["QUADRO 1 — PONTE LUCRO LÍQUIDO → CAIXA OPERACIONAL (Indireto · base contábil)", "", ""], ["(=) Lucro Líquido (DRE, Jan–Mai)", "1.710.877", "100,00%"], ["(+) Depreciação (não-caixa)", "12.626", "0,70%"], ["(+) Amortização de intangível (não-caixa)", "33.605", "2,00%"], ["(–) Aumento de Clientes", "7.469", "0,40%"], ["(–) Aumento de Estoques (físico)", "(1.469.521)", "-85,90%"], ["(–) Aumento de Adiantamentos", "(200.056)", "-11,70%"], ["(–) Aumento de Impostos a Recuperar", "(4.818)", "-0,30%"], ["(–) Aumento de Outros Créditos", "(191.789)", "-11,20%"], ["(–) Redução de Fornecedores", "(296.472)", "-17,30%"], ["(+) Aumento de Obrigações Tributárias", "244.219", "14,30%"], ["(+) Aumento de Obrigações Trabalhistas", "10.355", "0,60%"], ["(=) FCO INDIRETO (base contábil)", "(143.505)", ""], ["", "", ""], ["QUADRO 2 — DIVERGÊNCIA FCO DIRETO × INDIRETO", "", ""], ["FCO Direto (tesouraria · regime de caixa)", "(1.746.722)", ""], ["(–) FCO Indireto (base contábil · competência)", "(143.505)", ""], ["(=) Divergência (competência × caixa)", "(1.603.217)", ""], ["", "", ""], ["QUADRO 3 — CHECK MESTRE DE CAIXA (tesouraria × contábil)", "", ""], ["Variação de Caixa — Tesouraria (Geração DFC)", "37.538", ""], ["(–) Variação de Caixa — Contábil (Caixa Balanço Mai−Jan)", "37.538", ""], ["(=) Diferença de caixa a conciliar", "–", ""], ["", "", ""], ["📊 LEITURA", "", ""], ["•  Quadro 1 (ponte rigorosa): o Lucro Líquido de R$ 1,71 mi foi quase todo consumido pelo capital de giro — principalmente o aumento de R$ 1,47 mi no estoque físico — resultando em FCO operacional de −R$ 0,14 mi.", "", ""], ["•  Quadro 2: o FCO de tesouraria (−R$ 1,75 mi) é R$ 1,60 mi mais negativo que o contábil (−R$ 0,14 mi). É diferença de regime competência × caixa — principalmente timing de pagamento a fornecedores e escopo de recebimentos/tributos (caixa bruto × valores líquidos da DRE).", "", ""], ["•  Quadro 3 (check mestre): após o ajuste de R$ 145.805 (reclassificação de Clientes para Caixa em Mai/26), a variação de caixa contábil passou a IGUALAR a da tesouraria (+R$ 38 mil). Check fechado — diferença de R$ 0.", "", ""], ["•  Conclusão: o Quadro 1 fecha 100% (ponte auditável) e o Quadro 3 está conciliado (R$ 0) após o ajuste. O Quadro 2 (−R$ 1,60 mi) é a diferença estrutural de base competência × caixa — some quando tesouraria e contabilidade forem integradas.", "", ""]], "Consolidação 12-2025": [["LENVIE", "", "", ""], ["Consolidação 31/12/2025 — FRI + AURA  ·  Balanço e DRE", "", "", ""], ["Conta", "FRI", "AURA", "CONSOLIDADO"], ["BALANÇO PATRIMONIAL — ATIVO", "", "", ""], ["Caixa e Bancos com Aplicações Financeiras", "1.335.063", "131.188", "1.466.251"], ["Clientes", "10.424.077", "–", "10.424.077"], ["Estoques", "11.605.269", "373.119", "11.978.388"], ["Adiantamentos", "347.800", "2.731", "350.531"], ["Impostos a Recuperar", "436.077", "–", "436.077"], ["Outros Créditos", "680.458", "–", "680.458"], ["Outros Créditos Intercompany", "562.000", "–", "562.000"], ["TOTAL ATIVO CIRCULANTE", "25.390.745", "507.038", "25.897.783"], ["Investimentos", "80.223", "–", "80.223"], ["Intangível", "466.253", "–", "466.253"], ["Imobilizados", "317.252", "–", "317.252"], ["(–) Depreciações Acumuladas", "(64.980)", "–", "(64.980)"], ["TOTAL ATIVO NÃO CIRCULANTE", "798.748", "–", "798.748"], ["TOTAL DO ATIVO", "26.189.493", "507.038", "26.696.531"], ["BALANÇO PATRIMONIAL — PASSIVO E PATRIMÔNIO LÍQUIDO", "", "", ""], ["Fornecedores", "3.793.749", "48.006", "3.841.755"], ["Obrigações Tributárias", "854.309", "14.444", "868.753"], ["Obrigações Trabalhistas", "150.719", "8.979", "159.698"], ["Obrigações de Financiamentos (CP)", "1.663.585", "–", "1.663.585"], ["Contas a Pagar Intercompany", "–", "562.000", "562.000"], ["TOTAL PASSIVO CIRCULANTE", "6.462.362", "633.428", "7.095.790"], ["Obrigações de Financiamentos (LP)", "7.569.425", "–", "7.569.425"], ["TOTAL PASSIVO NÃO CIRCULANTE", "7.569.425", "–", "7.569.425"], ["Capital Social", "50.000", "50.000", "100.000"], ["Lucros ou Prejuízos Acumulados", "6.734.549", "(29.123)", "6.705.426"], ["Lucro Distribuído / Antecipação", "–", "–", "–"], ["Lucro no Exercício (Prejuízo)", "5.373.157", "(147.268)", "5.225.890"], ["TOTAL PATRIMÔNIO LÍQUIDO", "12.157.706", "(126.391)", "12.031.316"], ["TOTAL DO PASSIVO + PL", "26.189.493", "507.038", "26.696.531"], ["DEMONSTRAÇÃO DO RESULTADO (ANO 2025)", "", "", ""], ["Receita Bruta de Vendas", "56.877.423", "3.775.102", "60.652.524"], ["(–) Deduções sobre Vendas", "(13.856.521)", "(1.439.991)", "(15.296.512)"], ["(=) Receita Líquida", "43.020.902", "2.335.111", "45.356.012"], ["(–) Custo dos Produtos Vendidos (CMV)", "(15.672.682)", "(1.340.428)", "(17.013.110)"], ["(=) Lucro Bruto", "27.348.219", "994.683", "28.342.903"], ["(–) Despesas com Pessoal", "(6.208.890)", "(917.935)", "(7.126.825)"], ["(–) Despesas Gerais e Administrativas", "(3.944.946)", "(128.877)", "(4.073.823)"], ["(–) Despesas com Vendas", "(5.814.204)", "(24.158)", "(5.838.361)"], ["(–) Despesas de Marketing", "(2.840.060)", "(4.633)", "(2.844.693)"], ["(–) Depreciação e Amortização", "(70.100)", "–", "(70.100)"], ["(=) Resultado Operacional (EBIT)", "8.470.020", "(80.919)", "8.389.101"], ["(±) Resultado Financeiro", "(1.353.738)", "(66.348)", "(1.420.086)"], ["(±) Result. Não Oper. / Não Dedutíveis", "(148.986)", "–", "(148.986)"], ["(–) IRPJ / CSLL", "(1.594.139)", "–", "(1.594.139)"], ["(=) Resultado do Exercício", "5.373.157", "(147.268)", "5.225.889"], ["", "", "", ""], ["Consolidação por soma direta (FRI + AURA); intercompany mantido como nos demais meses do modelo (Outros Créditos Interco. = Contas a Pagar Interco. = R$ 562.000).", "", "", ""], ["Fonte: 'FRI Balanço e DRE 202512' e 'AURA Balanço e DRE 202512'. Posição 31/12/2025.", "", "", ""]], "BP_Mensal_Contabil": [["LENVIE", "", "", "", "", "", ""], ["Balanço Patrimonial — CONTÁBIL | Janeiro – Maio 2026", "", "", "", "", "", ""], ["Conta", "31/12/2025 (Consol.)", "Jan/26", "Fev/26", "Mar/26", "Abr/26", "Mai/26"], ["ATIVO CIRCULANTE", "", "", "", "", "", ""], ["Caixa e Bancos com Aplicações Financeiras", "1.466.251", "1.353.243", "991.843", "492.304", "1.788.948", "1.390.781"], ["Clientes", "10.424.077", "9.734.791", "9.401.553", "9.642.118", "9.795.412", "9.727.321"], ["Estoques", "11.978.388", "12.970.119", "12.993.476", "15.027.098", "15.023.627", "14.439.640"], ["Adiantamentos", "350.531", "192.675", "223.935", "284.894", "363.144", "392.731"], ["Impostos a Recuperar", "436.077", "551.258", "617.434", "667.161", "664.329", "556.077"], ["Outros Créditos", "680.458", "107.726", "156.070", "203.838", "250.967", "299.515"], ["Outros Créditos Intercompany", "562.000", "552.000", "567.000", "684.000", "916.000", "637.000"], ["TOTAL ATIVO CIRCULANTE", "25.897.783", "25.461.812", "24.951.312", "27.001.413", "28.802.428", "27.443.065"], ["", "", "", "", "", "", ""], ["ATIVO NÃO CIRCULANTE", "", "", "", "", "", ""], ["Investimentos", "80.223", "82.687", "85.150", "87.614", "90.078", "92.542"], ["Intangível", "466.253", "457.852", "449.450", "441.049", "432.648", "424.247"], ["Imobilizados", "317.252", "317.252", "317.252", "328.384", "329.916", "333.331"], ["(-) Depreciações Acumuladas", "(64.980)", "(67.820)", "(70.661)", "(73.681)", "(77.420)", "(80.447)"], ["TOTAL ATIVO NÃO CIRCULANTE", "798.748", "789.970", "781.192", "783.366", "775.222", "769.674"], ["", "", "", "", "", "", ""], ["TOTAL DO ATIVO", "26.696.531", "26.251.782", "25.732.504", "27.784.779", "29.577.650", "28.212.739"], ["", "", "", "", "", "", ""], ["PASSIVO CIRCULANTE", "", "", "", "", "", ""], ["Fornecedores", "3.841.755", "4.977.271", "4.395.167", "5.580.041", "4.941.776", "4.680.799"], ["Obrigações Tributárias", "868.753", "616.483", "778.954", "976.493", "661.866", "860.702"], ["Obrigações Trabalhistas", "159.698", "130.535", "127.792", "132.096", "143.560", "140.890"], ["Obrigações de Financiamentos (CP)", "1.663.585", "1.212.259", "1.145.167", "1.118.736", "1.379.752", "1.031.832"], ["Contas a Pagar Intercompany", "562.000", "552.000", "567.000", "684.000", "916.000", "637.000"], ["TOTAL PASSIVO CIRCULANTE", "7.095.790", "7.488.547", "7.014.080", "8.491.366", "8.042.954", "7.351.223"], ["", "", "", "", "", "", ""], ["PASSIVO NÃO CIRCULANTE", "", "", "", "", "", ""], ["Obrigações de Financiamentos (LP)", "7.569.425", "7.569.425", "7.569.425", "8.838.838", "10.768.158", "10.256.567"], ["TOTAL PASSIVO NÃO CIRCULANTE", "7.569.425", "7.569.425", "7.569.425", "8.838.838", "10.768.158", "10.256.567"], ["", "", "", "", "", "", ""], ["PATRIMÔNIO LÍQUIDO", "", "", "", "", "", ""], ["Capital Social", "100.000", "100.000", "100.000", "100.000", "100.000", "100.000"], ["Lucros ou Prejuízos Acumulados", "6.705.426", "10.726.795", "10.994.617", "9.814.580", "10.639.627", "10.032.370"], ["Antecipação de Lucros (mensal)", "–", "(49.999)", "(49.999)", "(49.999)", "(49.999)", "(49.999)"], ["Lucro no Exercício (Prejuízo)", "5.225.890", "417.014", "104.381", "589.994", "76.911", "522.577"], ["TOTAL PATRIMÔNIO LÍQUIDO", "12.031.316", "11.193.810", "11.148.999", "10.454.575", "10.766.539", "10.604.948"], ["", "", "", "", "", "", ""], ["TOTAL DO PASSIVO + PL", "26.696.531", "26.251.782", "25.732.504", "27.784.779", "29.577.650", "28.212.739"]], "Indicadores_CDG_Contabil": [["LENVIE", "", "", "", "", "", "", ""], ["Indicadores de Capital de Giro — CONTÁBIL | Janeiro – Maio 2026", "", "", "", "", "", "", ""], ["Indicador", "Fórmula", "Jan/26", "Fev/26", "Mar/26", "Abr/26", "Mai/26", "12-2025 (anual)"], ["PMR — Prazo Médio de Recebimento", "(Clientes / Receita Bruta) × 30", "56,4 dias", "61,6 dias", "53,8 dias", "55,0 dias", "51,3 dias", "61,9 dias"], ["PME — Prazo Médio de Estoque", "(Estoques / CMV) × 30", "201,5 dias", "256,7 dias", "262,5 dias", "254,9 dias", "232,3 dias", "253,5 dias"], ["PMP — Prazo Médio de Pagamento", "(Fornecedores / CMV) × 30", "77,3 dias", "86,8 dias", "97,5 dias", "83,8 dias", "75,3 dias", "81,3 dias"], ["Ciclo Operacional", "PMR + PME", "257,8 dias", "318,3 dias", "316,4 dias", "309,9 dias", "283,6 dias", "315,3 dias"], ["Ciclo Financeiro", "Ciclo Operacional − PMP", "180,5 dias", "231,4 dias", "218,9 dias", "226,1 dias", "208,3 dias", "234,0 dias"], ["NCG — Necessidade de Capital de Giro", "AC Operac. − PC Operac.", "R$ 17.832.280", "R$ 18.090.555", "R$ 19.136.479", "R$ 20.350.278", "R$ 19.732.893", "R$ 18.999.326"], ["Capital de Giro Líquido (CGL)", "Ativo Circ. − Passivo Circ.", "R$ 17.973.264", "R$ 17.937.232", "R$ 18.510.048", "R$ 20.759.475", "R$ 20.091.842", "R$ 18.801.992"], ["Δ NCG (variação mês a mês)", "NCGₙ − NCGₙ₋₁", "–", "R$ 258.276", "R$ 1.045.924", "R$ 1.213.799", "(R$ 617.386)", "–"], ["Δ CGL (variação mês a mês)", "CGLₙ − CGLₙ₋₁", "–", "(R$ 36.033)", "R$ 572.816", "R$ 2.249.427", "(R$ 667.633)", "–"], ["", "", "", "", "", "", "", ""], ["PREMISSAS (input manual — substituir pela DRE)", "", "", "", "", "", "", ""], ["Receita Bruta (mensal)", "input", "R$ 5.181.815", "R$ 4.578.126", "R$ 5.371.659", "R$ 5.340.063", "R$ 5.689.085", "R$ 60.652.524"], ["CMV (mensal)", "input", "R$ 1.931.265", "R$ 1.518.804", "R$ 1.717.248", "R$ 1.768.218", "R$ 1.864.578", "R$ 17.013.110"]], "BP_Mensal_Gerencial": [["LENVIE", "", "", "", "", "", ""], ["Balanço Patrimonial — GERENCIAL | Janeiro – Maio 2026", "", "", "", "", "", ""], ["Conta", "12-2025", "Jan/26", "Fev/26", "03-2026", "Abr/26", "Mai/26"], ["ATIVO CIRCULANTE", "", "", "", "", "", ""], ["Caixa e Bancos com Aplicações Financeiras", "1.466.251", "1.353.243", "991.843", "492.304", "1.788.948", "1.390.781"], ["Clientes", "10.424.077", "9.734.791", "9.401.553", "9.642.118", "9.795.412", "9.727.321"], ["Estoques (bruto / físico)", "11.978.388", "12.970.119", "12.993.476", "15.027.098", "15.023.627", "14.439.640"], ["(–) Provisão p/ Ajuste de Estoque (gerencial)", "–", "–", "–", "–", "–", "(2.493.256)"], ["Adiantamentos", "350.531", "192.675", "223.935", "284.894", "363.144", "392.731"], ["Impostos a Recuperar", "436.077", "551.258", "617.434", "667.161", "664.329", "556.077"], ["Outros Créditos", "680.458", "107.726", "156.070", "203.838", "250.967", "299.515"], ["Outros Créditos Intercompany", "562.000", "552.000", "567.000", "684.000", "916.000", "637.000"], ["TOTAL ATIVO CIRCULANTE", "25.897.783", "25.461.812", "24.951.312", "27.001.413", "28.802.428", "24.949.809"], ["", "", "", "", "", "", ""], ["ATIVO NÃO CIRCULANTE", "", "", "", "", "", ""], ["Investimentos", "80.223", "82.687", "85.150", "87.614", "90.078", "92.542"], ["Intangível", "466.253", "457.852", "449.450", "441.049", "432.648", "424.247"], ["Imobilizados", "317.252", "317.252", "317.252", "328.384", "329.916", "333.331"], ["(-) Depreciações Acumuladas", "(64.980)", "(67.820)", "(70.661)", "(73.681)", "(77.420)", "(80.447)"], ["TOTAL ATIVO NÃO CIRCULANTE", "798.748", "789.970", "781.192", "783.366", "775.222", "769.674"], ["", "", "", "", "", "", ""], ["TOTAL DO ATIVO", "26.696.531", "26.251.782", "25.732.504", "27.784.779", "29.577.650", "25.719.483"], ["", "", "", "", "", "", ""], ["PASSIVO CIRCULANTE", "", "", "", "", "", ""], ["Fornecedores", "3.841.755", "4.977.271", "4.395.167", "5.580.041", "4.941.776", "4.680.799"], ["Obrigações Tributárias", "868.753", "616.483", "778.954", "976.493", "661.866", "860.702"], ["Obrigações Trabalhistas", "159.698", "130.535", "127.792", "132.096", "143.560", "140.890"], ["Obrigações de Financiamentos (CP)", "1.663.585", "1.212.259", "1.145.167", "1.118.736", "1.379.752", "1.031.832"], ["Contas a Pagar Intercompany", "562.000", "552.000", "567.000", "684.000", "916.000", "637.000"], ["TOTAL PASSIVO CIRCULANTE", "7.095.790", "7.488.547", "7.014.080", "8.491.366", "8.042.954", "7.351.223"], ["", "", "", "", "", "", ""], ["PASSIVO NÃO CIRCULANTE", "", "", "", "", "", ""], ["Obrigações de Financiamentos (LP)", "7.569.425", "7.569.425", "7.569.425", "8.838.838", "10.768.158", "10.256.567"], ["TOTAL PASSIVO NÃO CIRCULANTE", "7.569.425", "7.569.425", "7.569.425", "8.838.838", "10.768.158", "10.256.567"], ["", "", "", "", "", "", ""], ["PATRIMÔNIO LÍQUIDO", "", "", "", "", "", ""], ["Capital Social", "100.000", "100.000", "100.000", "100.000", "100.000", "100.000"], ["Lucros ou Prejuízos Acumulados", "6.705.426", "10.726.795", "10.994.617", "9.814.580", "10.639.627", "7.539.115"], ["Antecipação de Lucros (mensal)", "–", "(49.999)", "(49.999)", "(49.999)", "(49.999)", "(49.999)"], ["Lucro no Exercício (Prejuízo)", "5.225.890", "417.014", "104.381", "589.994", "76.911", "522.577"], ["TOTAL PATRIMÔNIO LÍQUIDO", "12.031.316", "11.193.810", "11.148.999", "10.454.575", "10.766.539", "8.111.693"], ["", "", "", "", "", "", ""], ["TOTAL DO PASSIVO + PL", "26.696.531", "26.251.782", "25.732.504", "27.784.779", "29.577.650", "25.719.483"]], "Indicadores_CDG_Gerencial": [["LENVIE", "", "", "", "", "", "", ""], ["Indicadores de Capital de Giro — GERENCIAL | Janeiro – Maio 2026", "", "", "", "", "", "", ""], ["Indicador", "Fórmula", "Jan/26", "Fev/26", "Mar/26", "Abr/26", "Mai/26", "12-2025 (anual)"], ["PMR — Prazo Médio de Recebimento", "(Clientes / Receita Bruta) × 30", "56,4 dias", "61,6 dias", "53,8 dias", "55,0 dias", "51,3 dias", "61,9 dias"], ["PME — Prazo Médio de Estoque", "(Estoques / CMV) × 30", "201,5 dias", "256,7 dias", "262,5 dias", "254,9 dias", "192,2 dias", "253,5 dias"], ["PMP — Prazo Médio de Pagamento", "(Fornecedores / CMV) × 30", "77,3 dias", "86,8 dias", "97,5 dias", "83,8 dias", "75,3 dias", "81,3 dias"], ["Ciclo Operacional", "PMR + PME", "257,8 dias", "318,3 dias", "316,4 dias", "309,9 dias", "243,5 dias", "315,3 dias"], ["Ciclo Financeiro", "Ciclo Operacional − PMP", "180,5 dias", "231,4 dias", "218,9 dias", "226,1 dias", "168,2 dias", "234,0 dias"], ["NCG — Necessidade de Capital de Giro", "AC Operac. − PC Operac.", "R$ 17.832.280", "R$ 18.090.555", "R$ 19.136.479", "R$ 20.350.278", "R$ 17.239.637", "R$ 18.999.326"], ["Capital de Giro Líquido (CGL)", "Ativo Circ. − Passivo Circ.", "R$ 17.973.264", "R$ 17.937.232", "R$ 18.510.048", "R$ 20.759.475", "R$ 17.598.586", "R$ 18.801.992"], ["Δ NCG (variação mês a mês)", "NCGₙ − NCGₙ₋₁", "–", "R$ 258.276", "R$ 1.045.924", "R$ 1.213.799", "(R$ 3.110.641)", "–"], ["Δ CGL (variação mês a mês)", "CGLₙ − CGLₙ₋₁", "–", "(R$ 36.033)", "R$ 572.816", "R$ 2.249.427", "(R$ 3.160.889)", "–"], ["", "", "", "", "", "", "", ""], ["PREMISSAS (input manual — substituir pela DRE)", "", "", "", "", "", "", ""], ["Receita Bruta (mensal)", "input", "R$ 5.181.815", "R$ 4.578.126", "R$ 5.371.659", "R$ 5.340.063", "R$ 5.689.085", "R$ 60.652.524"], ["CMV (mensal)", "input", "R$ 1.931.265", "R$ 1.518.804", "R$ 1.717.248", "R$ 1.768.218", "R$ 1.864.578", "R$ 17.013.110"]], "Painel Evolução Estoque": [["LENVIE", "", "", "", "", "", "", "", "", "", "", "", ""], ["Painel de Evolução do Estoque | Janeiro – Maio 2026", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", ""], ["Índice de Maturidade do Estoque — Relação Produto Acabado / Insumos", "", "", "", "", "", "", "", "", "", "", "", ""], ["O que ele mede?  Quanto maior, mais estoque \"cru\", distante de caixa", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", ""], ["TABELA 1 — Informação Sistêmica e Contábil", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "Posição\n31/12/2025", "", "Posição\n31/01/2026", "", "Posição\n28/02/2026", "", "Posição\n31/03/2026", "", "Posição\n30/04/2026", "", "Posição\n31/05/2026", ""], ["ESTOQUE", "R$ 11.978.388,00", "", "R$ 12.970.118,65", "", "R$ 12.780.243,28", "", "R$ 15.027.097,72", "", "R$ 15.757.726,92", "", "R$ 16.708.941,86", ""], ["Insumos", "R$ 9.006.581,23", "75%", "R$ 11.254.991,61", "87%", "R$ 9.578.817,75", "75%", "R$ 11.393.300,78", "76%", "R$ 10.829.706,86", "69%", "R$ 11.058.676,24", "66%"], ["Produto Acabado", "R$ 2.971.806,77", "25%", "R$ 1.715.127,04", "13%", "R$ 3.201.425,53", "25%", "R$ 3.633.796,94", "24%", "R$ 4.928.020,06", "31%", "R$ 5.650.265,62", "34%"], ["Índice de Maturidade do Estoque", "0,329959470", "", "0,152388122", "", "0,334219276", "", "0,318941544", "", "0,455046487", "", "0,510935079", ""], ["", "", "", "", "", "", "", "", "", "", "", "", ""], ["TABELA 2 — Posição Operações (ajustes realizados por Operações)", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "Posição\n31/12/2025", "", "Posição\n31/01/2026", "", "Posição\n28/02/2026", "", "Posição\n31/03/2026", "", "Posição\n30/04/2026", "", "Posição\n31/05/2026", ""], ["ESTOQUE", "R$ 11.978.388,00", "", "R$ 12.970.118,65", "", "R$ 12.780.243,28", "", "R$ 15.027.097,72", "", "R$ 15.757.726,92", "", "R$ 11.946.383,98", ""], ["Insumos", "R$ 9.006.581,23", "75%", "R$ 11.254.991,61", "87%", "R$ 9.578.817,75", "75%", "R$ 11.393.300,78", "76%", "R$ 10.829.706,86", "69%", "R$ 6.296.118,36", "53%"], ["Produto Acabado", "R$ 2.971.806,77", "25%", "R$ 1.715.127,04", "13%", "R$ 3.201.425,53", "25%", "R$ 3.633.796,94", "24%", "R$ 4.928.020,06", "31%", "R$ 5.650.265,62", "47%"], ["Índice de Maturidade do Estoque", "0,329959470", "", "0,152388122", "", "0,334219276", "", "0,318941544", "", "0,455046487", "", "0,897420489", ""], ["Nota: a coluna 31/05/2026 da Tabela 2 reflete o ajuste de Operações (baixa de insumos), refletido no Balanço Gerencial e nos Indicadores Gerenciais.", "", "", "", "", "", "", "", "", "", "", "", ""], ["", "", "", "", "", "", "", "", "", "", "", "", ""], ["ANÁLISE ESTRATÉGICA — ÍNDICE DE MATURIDADE DO ESTOQUE (Produto Acabado / Insumos)", "", "", "", "", "", "", "", "", "", "", "", ""], ["Como ler o índice", "", "", "", "", "", "", "", "", "", "", "", ""], ["O índice relaciona Produto Acabado / Insumos. Quanto MAIOR, maior a parcela do estoque já convertida em produto pronto para venda — estoque mais \"maduro\" e mais próximo do caixa. Quanto MENOR, mais o estoque está concentrado em insumos (\"cru\"), distante da conversão em receita. Observação técnica: como a razão está montada (PA/Insumos), o índice SOBE quando o estoque amadurece; se a intenção for que \"quanto maior = mais cru\", a fórmula deve ser invertida para Insumos/PA. A leitura abaixo segue a fórmula atual do painel.", "", "", "", "", "", "", "", "", "", "", "", ""], ["Cenário Contábil / Sistêmico", "", "", "", "", "", "", "", "", "", "", "", ""], ["Partindo de 0,33 (dez/25), o índice caiu para 0,15 em jan/26 — reflexo de forte entrada de insumos (87% do estoque, R$ 11,3 mi) ainda não convertida. Em seguida recuperou de forma consistente até 0,51 em mai/26, com o produto acabado saltando de R$ 1,7 mi (13%) para R$ 5,65 mi (34%). Porém os insumos ficaram travados em torno de R$ 11 mi durante todo o período e o estoque total cresceu 29% (R$ 12,97 mi para R$ 16,71 mi). Ou seja: a melhora do índice veio do crescimento do produto acabado, não da redução dos insumos — que seguem altos e pressionando o capital de giro.", "", "", "", "", "", "", "", "", "", "", "", ""], ["Cenário Operações (Gerencial)", "", "", "", "", "", "", "", "", "", "", "", ""], ["Na visão de Operações o índice de maio salta para 0,90. A diferença não está no produto acabado (mantido em R$ 5,65 mi), e sim na baixa de insumos: de R$ 11,06 mi para R$ 6,30 mi, uma redução de R$ 4,76 mi. Isso revela que cerca de 43% dos insumos registrados na contabilidade não são considerados ativos giráveis por Operações (obsoletos, em excesso ou sem conversão prevista). Expurgada essa parcela, o estoque remanescente fica equilibrado (53% insumos / 47% produto acabado) e substancialmente mais líquido e próximo do caixa.", "", "", "", "", "", "", "", "", "", "", "", ""], ["Implicação estratégica & recomendações", "", "", "", "", "", "", "", "", "", "", "", ""], ["O alerta central não é o índice em si, mas o gap de R$ 4,76 mi entre o estoque sistêmico e a posição de Operações em maio — capital de giro potencialmente empoçado em insumos sem giro. Recomenda-se: (1) reconciliar a divergência (obsolescência, duplicidade, material em trânsito/consignado) e formalizar provisão para perdas; (2) revisar a política de compras e a cobertura-alvo de insumos via MRP, atacando o excesso na origem; (3) acelerar a conversão de insumos em produto acabado e a venda deste, sustentando o índice por eficiência e não por acúmulo; (4) acompanhar o índice mensalmente junto à NCG — a maturação saudável do estoque é a alavanca mais direta de liberação de caixa nesta operação.", "", "", "", "", "", "", "", "", "", "", "", ""]], "Comparativo & Leitura CFO": [["LENVIE", "", "", "", ""], ["Comparativo Contábil × Gerencial — Resultados Atualizados e Ajuste de Estoque (Maio/2026)", "", "", "", ""], ["", "", "", "", ""], ["", "", "", "", ""], ["B.  BALANÇO PATRIMONIAL — Posição 31/05/2026", "", "", "", ""], ["Conta", "Contábil", "Gerencial", "Δ (Ger − Cont)", "Δ %"], ["Estoques", "R$ 14.439.640", "R$ 11.946.384", "(R$ 2.493.256)", "-17,3%"], ["Total Ativo Circulante", "R$ 27.443.065", "R$ 24.949.809", "(R$ 2.493.256)", "-9,1%"], ["Total do Ativo", "R$ 28.212.739", "R$ 25.719.483", "(R$ 2.493.256)", "-8,8%"], ["Lucro no Exercício (Prejuízo)", "R$ 522.577", "R$ 522.577", "–", "0,0%"], ["Lucros ou Prejuízos Acumulados", "R$ 10.032.370", "R$ 7.539.115", "(R$ 2.493.256)", "-24,9%"], ["Total Patrimônio Líquido", "R$ 10.604.948", "R$ 8.111.693", "(R$ 2.493.256)", "-23,5%"], ["Total do Passivo + PL", "R$ 28.212.739", "R$ 25.719.483", "(R$ 2.493.256)", "-8,8%"], ["", "", "", "", ""], ["C.  INDICADORES DE CAPITAL DE GIRO — Maio/2026", "", "", "", ""], ["Indicador", "Contábil", "Gerencial", "Δ (Ger − Cont)", "Δ %"], ["PMR — Prazo Médio de Recebimento", "51,3 dias", "51,3 dias", "0,0 dias", "0,0%"], ["PME — Prazo Médio de Estoque", "232,3 dias", "192,2 dias", "-40,1 dias", "-17,3%"], ["PMP — Prazo Médio de Pagamento", "75,3 dias", "75,3 dias", "0,0 dias", "0,0%"], ["Ciclo Operacional", "283,6 dias", "243,5 dias", "-40,1 dias", "-14,1%"], ["Ciclo Financeiro", "208,3 dias", "168,2 dias", "-40,1 dias", "-19,3%"], ["NCG — Necessidade de Capital de Giro", "R$ 19.732.893", "R$ 17.239.637", "(R$ 2.493.256)", "-12,6%"], ["Capital de Giro Líquido (CGL)", "R$ 20.091.842", "R$ 17.598.586", "(R$ 2.493.256)", "-12,4%"], ["", "", "", "", ""], ["D.  LEITURA EXECUTIVA — DIAGNÓSTICO DE CFO", "", "", "", ""], ["Tratamento contábil — ponto de governança", "", "", "", ""], ["Rotear a baixa de estoque por Lucros Acumulados, e não pelo resultado, preserva o desempenho reportado do mês — é um lançamento 'abaixo da linha'. Sob regime de competência, uma perda/impairment de estoque do período corrente normalmente é despesa do resultado corrente; só se justifica em patrimônio se a perda se referir a exercícios anteriores (ajuste de períodos anteriores). É indispensável documentar a natureza e a data de origem da perda e validar o tratamento com a auditoria, sob pena de inflar artificialmente o resultado corrente.", "", "", "", ""], ["Por que NCG e ciclos continuam melhorando", "", "", "", ""], ["Independentemente de onde a baixa é registrada (resultado ou patrimônio), a NCG e os ciclos melhoram de forma idêntica, porque dependem do ativo (estoque) e não do PL. A NCG cai R$ 2,49 mi (de R$ 19,9 mi para R$ 17,4 mi), o PME recua ~40 dias (232 → 192) e o ciclo financeiro comprime de 209 para 169 dias. Vale o mesmo alerta: é melhora de qualidade do balanço, não geração de caixa.", "", "", "", ""], ["A leitura por trás dos números", "", "", "", ""], ["Mesmo com resultado positivo, o patrimônio gerencial encolhe 23,5% (de R$ 10,60 mi para R$ 8,11 mi). O sinal de fundo está no índice de maturidade do estoque, que sobe de 0,15 (jan) para 0,51 (mai) na visão contábil — estoque cada vez mais 'cru', com insumos travados e capital de giro financiando mercadoria de baixa conversibilidade. O ajuste de Operações reposiciona o índice de maio para 0,90, expurgando insumos sem giro.", "", "", "", ""], ["Riscos & Recomendações", "", "", "", ""], ["Riscos: (1) governança do lançamento em patrimônio sem suporte documental; (2) erosão de PL (-23,5%) com possível impacto em covenants atrelados a patrimônio; (3) recorrência, se a baixa decorre de excesso de compras/obsolescência. Recomendações: (1) formalizar provisão para perdas de estoque e definir, com a auditoria, se o impacto é de período corrente ou anterior, convergindo contábil e gerencial; (2) revisar política de compras de insumos e cobertura-alvo por SKU; (3) acelerar conversão de insumos em produto acabado, atacando o índice de maturidade; (4) com ciclo financeiro de ~170 dias, alongar prazo com fornecedores e reduzir dependência de dívida onerosa (LP de R$ 10,3 mi).", "", "", "", ""]]}</script>
+<script>
+/* ================== SEÇÕES FINANCEIRAS (13 abas do Google Sheets) ================== */
+(function(){
+  var FIN_TABS = {'fin-kpis':{label:'KPIs',sheet:"KPIs",ico:'📊'},'fin-sga':{label:'SG&A',sheet:"SG&A",ico:'🧾'},'fin-cmv':{label:'CMV por Canal',sheet:"CMV por Canal",ico:'📦'},'fin-dfc':{label:'DFC',sheet:"DFC",ico:'💵'},'fin-dfc-pr':{label:'DFC Proj × Real',sheet:"DFC Proj x Real",ico:'📐'},'fin-concil':{label:'Conciliação DFC',sheet:"Conciliação DFC",ico:'🔗'},'fin-consol':{label:'Consolidação 12-2025',sheet:"Consolidação 12-2025",ico:'🧮'},'fin-bp-cont':{label:'Balanço Patrimonial Contábil',sheet:"BP_Mensal_Contabil",ico:'🏛️'},'fin-cdg-cont':{label:'Indicadores CDG Contábil',sheet:"Indicadores_CDG_Contabil",ico:'📐'},'fin-bp-ger':{label:'Balanço Patrimonial Gerencial',sheet:"BP_Mensal_Gerencial",ico:'🏦'},'fin-estoque':{label:'Painel Evolução Estoque',sheet:"Painel Evolução Estoque",ico:'📦'},'fin-cdg-ger':{label:'Indicadores CDG Gerencial',sheet:"Indicadores_CDG_Gerencial",ico:'📈'},'fin-cfo':{label:'Comparativo & Leitura CFO',sheet:"Comparativo & Leitura CFO",ico:'🧭'}};
+  window.FIN_TABS = FIN_TABS;
+  window.FIN_LIVE = window.FIN_LIVE || null;
+  var FIN_SNAPSHOT = {};
+  try { FIN_SNAPSHOT = JSON.parse(document.getElementById('FIN_SNAPSHOT_DATA').textContent); } catch(e){ console.warn('Snapshot financeiro indisponível', e); }
+  window.FIN_SNAPSHOT = FIN_SNAPSHOT;
+
+  function finEsc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function finGetGrid(sheet){
+    if(window.FIN_LIVE && window.FIN_LIVE[sheet] && window.FIN_LIVE[sheet].length) return window.FIN_LIVE[sheet];
+    return FIN_SNAPSHOT[sheet] || [];
+  }
+  function finNumeric(v){
+    var s=String(v||'').trim();
+    if(!s) return false;
+    if(/dias$/i.test(s)) return true;
+    return /^[\(\-]?\s*R?\$?\s*[\d][\d.,%\s)]*\)?$/.test(s);
+  }
+  function finColAligns(rows, startRow){
+    var ncol=0; rows.forEach(function(r){ if(r.length>ncol) ncol=r.length; });
+    var aligns=[];
+    for(var c=0;c<ncol;c++){
+      var num=0,tot=0;
+      for(var r=Math.max(0,startRow);r<rows.length;r++){
+        var v=String((rows[r][c]||'')).trim();
+        if(!v||v==='–') continue;
+        tot++; if(finNumeric(v)) num++;
+      }
+      aligns.push(tot>0 && num/tot>=0.55 ? 'right' : 'left');
+    }
+    if(aligns.length) aligns[0]='left';
+    return aligns;
+  }
+  var FIN_TOTAL_RE=/^(\(=\)|TOTAL|RECEITA BRUTA|RECEITA L[IÍ]QUIDA|LUCRO|EBITDA|RESULTADO|TOTAL DO ATIVO|TOTAL PASSIVO|TOTAL PATRIM|CAIXA DAS ATIVID|\(=\) CAIXA)/i;
+
+  /* ===== Renderizadores dedicados (espelham exatamente as abas do Google Planilhas) ===== */
+  function finIsBlankRow(row){ return row.filter(function(x){return String(x||'').trim();}).length===0; }
+  function finCellTxt(v){ return finEsc(String(v==null?'':v).replace(/\n/g,' ').trim()); }
+
+  // —— Conciliação DFC: Item | Valor (R$) | % s/ Lucro Líq. ——
+  function finRenderConcil(grid){
+    var rows=grid.map(function(r){ return r.slice(); });
+    // remove "LENVIE" e o título de 1 célula
+    if(rows.length && String(rows[0][0]||'').trim().toUpperCase()==='LENVIE') rows=rows.slice(1);
+    if(rows.length && rows[0].filter(function(x){return String(x||'').trim();}).length<=1) rows=rows.slice(1);
+    var html='<div class="fin-scroll"><table class="fin-table"><colgroup><col style="width:62%"><col style="width:21%"><col style="width:17%"></colgroup>';
+    for(var r=0;r<rows.length;r++){
+      var row=rows[r];
+      var c0=finCellTxt(row[0]), c1=finCellTxt(row[1]), c2=finCellTxt(row[2]);
+      if(finIsBlankRow(row)) continue;
+      var isHead=(/^Item$/i.test(c0) && /Valor/i.test(c1));
+      var filled=[c0,c1,c2].filter(function(x){return x;}).length;
+      var isSection=!isHead && filled===1 && !!c0;             // QUADRO 1/2/3, 📊 LEITURA
+      var isAnalysis=!isHead && filled===1 && /^[•·]/.test(c0); // bullets de leitura (caem em seção, mas formatamos com texto à esquerda)
+      var isTotal=!isHead && !isSection && FIN_TOTAL_RE.test(c0);
+      if(isHead){
+        html+='<tr class="fin-h"><th class="fin-c0 fin-l">'+c0+'</th><th class="fin-r">'+c1+'</th><th class="fin-r">'+c2+'</th></tr>';
+      } else if(isSection){
+        var secCls=/^[•·📊✅]/.test(c0)?'fin-note':'fin-sec';
+        html+='<tr class="'+secCls+'"><td class="fin-c0 fin-l" colspan="3">'+c0+'</td></tr>';
+      } else {
+        var cls=isTotal?' class="fin-tot"':'';
+        html+='<tr'+cls+'><td class="fin-c0 fin-l">'+c0+'</td><td class="fin-r">'+c1+'</td><td class="fin-r">'+c2+'</td></tr>';
+      }
+    }
+    html+='</table></div>';
+    return html;
+  }
+
+  // —— Painel Evolução Estoque: 6 colunas "Posição" (Valor + % lado a lado) ——
+  var FIN_ESTOQUE_POS=['31/12/2025','31/01/2026','28/02/2026','31/03/2026','30/04/2026','31/05/2026'];
+  function finRenderEstoque(grid){
+    var rows=grid.map(function(r){ return r.slice(); });
+    if(rows.length && String(rows[0][0]||'').trim().toUpperCase()==='LENVIE') rows=rows.slice(1);
+    // descobre se a linha é um cabeçalho "Posição"
+    function isPosHeader(row){ return FIN_ESTOQUE_POS.some(function(d){ return String(row[1]||'').indexOf(d)>=0; }); }
+    var html='';
+    var open=false;
+    function openTable(){
+      html+='<div class="fin-scroll" style="margin-top:10px"><table class="fin-table fin-estoque">';
+      html+='<colgroup><col style="width:24%">';
+      for(var p=0;p<6;p++){ html+='<col style="width:'+(76/6).toFixed(2)+'%">'; }
+      html+='</colgroup>';
+      html+='<tr class="fin-h"><th class="fin-c0 fin-l">Composição</th>';
+      for(var q=0;q<6;q++){ html+='<th class="fin-r">Posição '+FIN_ESTOQUE_POS[q]+'</th>'; }
+      html+='</tr>'; open=true;
+    }
+    function closeTable(){ if(open){ html+='</table></div>'; open=false; } }
+    for(var r=0;r<rows.length;r++){
+      var row=rows[r];
+      var c0=finCellTxt(row[0]);
+      if(isPosHeader(row)){ /* substituído pelo nosso cabeçalho fixo, ignora */ continue; }
+      if(finIsBlankRow(row)){ continue; }
+      var filled=row.filter(function(x){return String(x||'').trim();}).length;
+      // Seções / títulos / textos: apenas 1 célula preenchida
+      if(filled===1){
+        closeTable();
+        var big=/^(TABELA|ANÁLISE|Índice de Maturidade|Implicação|Cenário|Como ler|O que ele mede)/i.test(c0);
+        var noteCls = big ? 'fin-sec' : 'fin-note';
+        html+='<div class="'+(big?'fin-blk-title':'fin-blk-note')+'">'+c0+'</div>';
+        continue;
+      }
+      // linha de dados: c0 = rótulo, pares (valor, %) nas colunas 1..12
+      if(!open) openTable();
+      var isEstoqueRow=/^ESTOQUE$/i.test(c0);
+      var isIdx=/Índice de Maturidade/i.test(c0);
+      var cls=isEstoqueRow?' class="fin-tot"':(isIdx?' class="fin-sec"':'');
+      html+='<tr'+cls+'><td class="fin-c0 fin-l">'+c0+'</td>';
+      for(var p2=0;p2<6;p2++){
+        var val=finCellTxt(row[1+p2*2]);
+        var pct=finCellTxt(row[2+p2*2]);
+        var inner=val||'–';
+        if(pct){ inner+=' <span class="fin-pct">('+pct+')</span>'; }
+        html+='<td class="fin-r">'+inner+'</td>';
+      }
+      html+='</tr>';
+    }
+    closeTable();
+    return html;
+  }
+
+  // —— Comparativo & Leitura CFO: Conta | Contábil | Gerencial | Δ (Ger − Cont) | Δ % ——
+  function finRenderCFO(grid){
+    var rows=grid.map(function(r){ return r.slice(); });
+    if(rows.length && String(rows[0][0]||'').trim().toUpperCase()==='LENVIE') rows=rows.slice(1);
+    if(rows.length && rows[0].filter(function(x){return String(x||'').trim();}).length<=1) rows=rows.slice(1);
+    var html='';
+    var open=false;
+    function openTable(headRow){
+      html+='<div class="fin-scroll" style="margin-top:10px"><table class="fin-table fin-cfo">';
+      html+='<colgroup><col style="width:34%"><col style="width:17%"><col style="width:17%"><col style="width:18%"><col style="width:14%"></colgroup>';
+      html+='<tr class="fin-h">';
+      for(var c=0;c<5;c++){ html+='<th class="'+(c===0?'fin-c0 fin-l':'fin-r')+'">'+finCellTxt(headRow[c])+'</th>'; }
+      html+='</tr>'; open=true;
+    }
+    function closeTable(){ if(open){ html+='</table></div>'; open=false; } }
+    for(var r=0;r<rows.length;r++){
+      var row=rows[r];
+      var c0=finCellTxt(row[0]);
+      if(finIsBlankRow(row)) continue;
+      var isHead=(/^Conta$/i.test(c0) || /^Indicador$/i.test(c0)) && /Cont[áa]bil/i.test(finCellTxt(row[1]));
+      var filled=row.filter(function(x){return String(x||'').trim();}).length;
+      if(isHead){ closeTable(); openTable(row); continue; }
+      if(filled===1){
+        closeTable();
+        var isSec=/^[A-D]\.\s|BALAN[ÇC]O|INDICADORES|LEITURA|DIAGN[ÓO]STICO/i.test(c0);
+        if(isSec){ html+='<div class="fin-blk-title">'+c0+'</div>'; }
+        else { html+='<div class="fin-blk-note">'+c0+'</div>'; }
+        continue;
+      }
+      if(!open){ /* dados sem cabeçalho explícito — abre com cabeçalho padrão */ openTable(['Conta','Contábil','Gerencial','Δ (Ger − Cont)','Δ %']); }
+      var isTotal=FIN_TOTAL_RE.test(c0);
+      var cls=isTotal?' class="fin-tot"':'';
+      html+='<tr'+cls+'>';
+      for(var c2=0;c2<5;c2++){ html+='<td class="'+(c2===0?'fin-c0 fin-l':'fin-r')+'">'+finCellTxt(row[c2])+'</td>'; }
+      html+='</tr>';
+    }
+    closeTable();
+    return html;
+  }
+
+  window.renderFinSheet = function(tabId){
+    var info=FIN_TABS[tabId]; if(!info) return;
+    var host=document.getElementById('fin-host-'+tabId); if(!host) return;
+    var grid=finGetGrid(info.sheet);
+    if(!grid || !grid.length){ host.innerHTML='<div class="fin-empty">Sem dados para esta seção ainda.</div>'; return; }
+    // Renderizadores dedicados — espelham exatamente a aba do Google Planilhas
+    if(tabId==='fin-concil'){ host.innerHTML=finRenderConcil(grid); return; }
+    if(tabId==='fin-estoque'){ host.innerHTML=finRenderEstoque(grid); return; }
+    if(tabId==='fin-cfo'){ host.innerHTML=finRenderCFO(grid); return; }
+    var rows=grid.map(function(r){ return r.slice(); });
+    // remove linha "LENVIE"
+    if(rows.length && String(rows[0][0]||'').trim().toUpperCase()==='LENVIE') rows=rows.slice(1);
+    // remove a linha de título (apenas 1 célula preenchida no topo)
+    if(rows.length && rows[0].filter(function(x){return String(x||'').trim();}).length<=1) rows=rows.slice(1);
+    // acha a linha de cabeçalho = primeira com >= 2 células preenchidas
+    var headIdx=-1;
+    for(var i=0;i<rows.length;i++){ if(rows[i].filter(function(x){return String(x||'').trim();}).length>=2){ headIdx=i; break; } }
+    var aligns=finColAligns(rows, headIdx>=0?headIdx+1:0);
+    var ncol=aligns.length||1;
+    var html='<div class="fin-scroll"><table class="fin-table">';
+    for(var r=0;r<rows.length;r++){
+      var row=rows[r];
+      var cells=[]; for(var c=0;c<ncol;c++) cells.push(row[c]!==undefined?row[c]:'');
+      var filled=cells.filter(function(x){return String(x||'').trim();}).length;
+      var firstTxt=String(cells[0]||'').trim();
+      var isHead=(r===headIdx);
+      var isSection=!isHead && filled===1 && !!firstTxt;
+      var isTotal=!isHead && !isSection && FIN_TOTAL_RE.test(firstTxt);
+      var cls=isHead?'fin-h':(isSection?'fin-sec':(isTotal?'fin-tot':''));
+      html += '<tr'+(cls?' class="'+cls+'"':'')+'>';
+      if(isSection){
+        html += '<td class="fin-c0 fin-l" colspan="'+ncol+'">'+finEsc(firstTxt)+'</td>';
+      } else {
+        for(var c2=0;c2<ncol;c2++){
+          var v=finEsc(String(cells[c2]||'').replace(/\n/g,' '));
+          var al=aligns[c2]||'left';
+          var tag=isHead?'th':'td';
+          var cc=(c2===0?'fin-c0 ':'')+(al==='right'?'fin-r':'fin-l');
+          html += '<'+tag+' class="'+cc+'">'+v+'</'+tag+'>';
+        }
+      }
+      html += '</tr>';
+    }
+    html += '</table></div>';
+    host.innerHTML=html;
+  };
+
+  // Re-renderiza a aba financeira ativa após sincronizar com o Sheets (dados ao vivo)
+  if(typeof window.syncFromGoogleSheets==='function'){
+    var _origSync = window.syncFromGoogleSheets;
+    window.syncFromGoogleSheets = function(){
+      var ret = _origSync.apply(this, arguments);
+      var rerender = function(){
+        try{
+          var act=document.querySelector('.tab.active');
+          if(act && act.id.indexOf('tab-fin-')===0){ var tid=act.id.slice(4); if(FIN_TABS[tid]) window.renderFinSheet(tid); }
+        }catch(e){}
+      };
+      if(ret && typeof ret.then==='function'){ ret.then(rerender, function(){}); } else { setTimeout(rerender, 600); }
+      return ret;
+    };
+  }
+})();
+</script>
+
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
