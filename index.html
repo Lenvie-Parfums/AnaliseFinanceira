@@ -29,8 +29,8 @@
 #PPTX_MASK{position:fixed;inset:0;z-index:99991;background:rgba(8,10,12,.6);backdrop-filter:blur(3px);
   display:none;align-items:center;justify-content:center;animation:lvFadeUp .3s ease}
 #PPTX_MASK.show{display:flex}
-#PPTX_PANEL{background:var(--panel);border:1px solid #E6BB63;border-radius:16px;width:min(560px,92vw);
-  max-height:88vh;overflow:auto;padding:24px;color:var(--text);box-shadow:0 20px 50px rgba(0,0,0,.5)}
+#PPTX_PANEL{background:var(--panel);border:1px solid #E6BB63;border-radius:16px;width:min(720px,94vw);
+  max-height:90vh;overflow:auto;padding:24px;color:var(--text);box-shadow:0 20px 50px rgba(0,0,0,.5)}
 #PPTX_PANEL h3{margin:0 0 4px;font-size:18px;color:#EFEAD7}
 #PPTX_PANEL .sub{font-size:12px;color:var(--muted);margin-bottom:18px}
 #PPTX_PANEL .grp-title{font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#E6BB63;margin:16px 0 8px;font-weight:700}
@@ -45,6 +45,9 @@
 .pptx-btn:disabled{opacity:.55;cursor:not-allowed}
 .pptx-mini{display:flex;gap:8px;margin:6px 0 2px}
 .pptx-mini button{font-size:11px;color:#E6BB63;background:none;border:none;cursor:pointer;text-decoration:underline}
+.pptx-slidegrp{margin-bottom:6px}
+.pptx-slidegrp-title{font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:#979D74;margin:8px 4px 2px;font-weight:600}
+.pptx-months{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:14px;-webkit-tap-highlight-color:transparent}
 .layout{display:flex;flex-direction:column;min-height:100vh}
@@ -19997,12 +20000,49 @@ async function syncFromGoogleSheets(forceRefresh){
   try {
     // Quando forceRefresh=true, força o Apps Script a reler a planilha e atualizar
     // o cache compartilhado. Outros usuários vão receber esses dados na proxima leitura.
+    // mode=force também envia o cache-buster `t` para evitar qualquer cache de CDN.
     const url = APPS_SCRIPT_URL + (forceRefresh ? '?mode=force&t=' : '?t=') + Date.now();
-    const resp = await fetch(url, {cache:'no-store'});
-    if(!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const payload = await resp.json();
 
-    if(payload.error) throw new Error(payload.message || 'Erro no Apps Script');
+    // Timeout defensivo (30s) — caso o Apps Script trave / não responda,
+    // a Promise rejeita ao invés de ficar pendurada para sempre.
+    const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
+    const tid  = setTimeout(()=>{ if(ctrl) ctrl.abort(); }, 30000);
+
+    let resp;
+    try {
+      resp = await fetch(url, {cache:'no-store', redirect:'follow', signal: ctrl ? ctrl.signal : undefined});
+    } catch (netErr){
+      clearTimeout(tid);
+      if (netErr && (netErr.name === 'AbortError')) {
+        throw new Error('Tempo esgotado (30s) ao consultar o Google Apps Script. Verifique sua conexão.');
+      }
+      // Erros típicos de CORS / DNS / offline caem aqui (TypeError: Failed to fetch)
+      throw new Error('Falha de rede ao contatar o Google Apps Script. Verifique sua conexão e o deploy do script.');
+    }
+    clearTimeout(tid);
+
+    if(!resp.ok) throw new Error(`HTTP ${resp.status} ao consultar o Apps Script. Republique o deploy do Web App.`);
+
+    // Detecta resposta inválida (Apps Script devolve HTML quando o deploy está quebrado,
+    // por exemplo "Script function not found: doGet" ou tela de login do Google).
+    const ctype = (resp.headers.get('content-type') || '').toLowerCase();
+    const raw   = await resp.text();
+    if (!ctype.includes('json') && /<html[\s>]/i.test(raw)) {
+      let hint = 'O Google Apps Script vinculado a esta planilha não está respondendo JSON.';
+      const m = raw.match(/Script function not found:\s*(\w+)/i);
+      if (m) hint += ' O deploy atual não possui a função "' + m[1] + '". Abra o Apps Script no Google e republique o Web App (Implantar → Gerenciar implantações → Editar → Nova versão).';
+      else if (/sign in|signin|accounts\.google/i.test(raw)) hint += ' O deploy está pedindo login: em "Implantar como Web App", troque "Quem tem acesso" para "Qualquer pessoa".';
+      else hint += ' Verifique se o Web App está publicado e com a função doGet definida.';
+      throw new Error(hint);
+    }
+
+    let payload;
+    try { payload = JSON.parse(raw); }
+    catch (parseErr){
+      throw new Error('Resposta inválida do Apps Script (não é JSON). Republique o Web App com a função doGet retornando JSON.');
+    }
+
+    if(payload.error) throw new Error(payload.message || 'Erro retornado pelo Apps Script');
 
     if(payload.financeiro && typeof payload.financeiro==='object'){ window.FIN_LIVE = payload.financeiro; }
 
@@ -20224,9 +20264,15 @@ async function syncFromGoogleSheets(forceRefresh){
     // ── Salva no cache (localStorage) para próxima abertura ser instantânea ──
     saveDataToCache(payload);
 
+    // Retorna o payload para que o chamador (botão "Atualizar agora") possa confirmar sucesso
+    return payload;
+
   } catch(err) {
     console.error('Erro ao sincronizar:', err);
     updateDataStatus('error');
+    // ⚠️ IMPORTANTE: re-lança o erro para que o handler do botão saiba que falhou
+    // (antes, a função absorvia o erro e o botão sempre dizia ✅ atualizado).
+    throw err;
   }
 }
 
@@ -20718,25 +20764,26 @@ window.dismissLogin = function(oEl){
 
 
 </script>
-<div id="PPTX_FAB" title="Gerar apresentação PPTX"><span class="ic">📊</span><span>Gerar Apresentação</span></div>
+<div id="PPTX_FAB" title="Gerar Caderno Financeiro PPTX"><span class="ic">📊</span><span>Gerar Apresentação</span></div>
 <div id="PPTX_MASK">
   <div id="PPTX_PANEL">
-    <h3>Gerar Apresentação (PPTX)</h3>
-    <div class="sub">Escolha o que incluir. A apresentação usa as cores da marca e os dados atualmente carregados.</div>
+    <h3>Caderno Financeiro — Gerar Apresentação</h3>
+    <div class="sub">Apresentação estruturada por seções, no estilo do Caderno LENVIE. Use os dados atualmente carregados.</div>
 
-    <div class="grp-title">Seções / Abas</div>
-    <div id="PPTX_SECTIONS"></div>
-
-    <div class="grp-title">Meses</div>
+    <div class="grp-title">Mês(es) de referência</div>
     <div class="pptx-mini">
       <button type="button" onclick="pptxSelectMonths(true)">Todos</button>
       <button type="button" onclick="pptxSelectMonths(false)">Nenhum</button>
+      <button type="button" onclick="pptxSelectLastMonth()">Último com dados</button>
     </div>
     <div class="pptx-months" id="PPTX_MONTHS"></div>
 
-    <div class="grp-title">Opções</div>
-    <label class="pptx-opt"><input type="checkbox" id="PPTX_RESUMO" checked> DRE resumida — apenas linhas principais</label>
-    <label class="pptx-opt"><input type="checkbox" id="PPTX_CHARTS" checked> Incluir gráficos (quando houver)</label>
+    <div class="grp-title">Slides do caderno</div>
+    <div class="pptx-mini">
+      <button type="button" onclick="pptxSelectSlides(true)">Todos</button>
+      <button type="button" onclick="pptxSelectSlides(false)">Nenhum</button>
+    </div>
+    <div id="PPTX_SLIDES"></div>
 
     <div class="pptx-actions">
       <button class="pptx-btn" onclick="closePptxModal()">Cancelar</button>
@@ -20746,356 +20793,1120 @@ window.dismissLogin = function(oEl){
 </div>
 
 <script>
+/* =====================================================================
+   Caderno Financeiro LENVIE — Gerador de Apresentação PPTX (estruturado)
+   Substitui o gerador "tabela por aba" pelo caderno organizado em seções:
+   capa, resumo executivo, DRE comparativo, DRE YTD, canais, fluxo, etc.
+   ===================================================================== */
 (function(){
-  var BRAND={dark:'2A2E2D',verde:'4E513B',azul:'C8D1D5',off:'EFEAD7',marrom:'634E32',amarelo:'E6BB63',mono3:'979D74'};
+  // Paleta da marca (mesma do gerador anterior)
+  var BRAND = {
+    dark:    '2A2E2D', // preto/grafite (textos e fundos escuros)
+    verde:   '4E513B', // verde corporativo
+    azul:    'C8D1D5', // cinza-azulado
+    off:     'EFEAD7', // off-white (papel)
+    marrom:  '634E32', // marrom acinzentado
+    amarelo: 'E6BB63', // dourado destaque
+    mono3:   '979D74'  // verde-cinza mediano
+  };
+  var POS = '3F7D3A', NEG = 'B23A3A', NEU = '8A93A6';
 
-  // Seções disponíveis (somente as que existem na página)
-  function availableSections(){
-    var order=['dre','dre-ecom','taxes','compare','compare-ecom','products','estados','canais-consolidados','overview'];
-    var labels=(typeof TAB_LABELS!=='undefined')?TAB_LABELS:{};
-    var out=[];
-    order.forEach(function(id){
-      if(document.getElementById('tab-'+id)){ out.push({id:id,label:(labels[id]||id)}); }
-    });
+  // ---------------- HELPERS DE DADOS ----------------
+  function snap(){ return window.FIN_SNAPSHOT || {}; }
+  function liveOrSnap(){ return window.FIN_LIVE || snap(); }
+
+  function findRow(rows, label){
+    if (!rows) return null;
+    var t = String(label||'').toLowerCase().trim();
+    for (var i=0;i<rows.length;i++){
+      var c0 = String((rows[i]||[])[0]||'').toLowerCase().trim();
+      if (c0 === t) return rows[i];
+    }
+    // Tentativa fuzzy: começa com
+    for (var j=0;j<rows.length;j++){
+      var c1 = String((rows[j]||[])[0]||'').toLowerCase().trim();
+      if (c1 && c1.indexOf(t)===0) return rows[j];
+    }
+    return null;
+  }
+
+  // Encontra o índice da coluna do mês dado (a partir do header da KPIs row 2)
+  // headerRow é ['Indicador','Jan/26','Fev/26',...,'YTD 2026','YTD 2025',...]
+  function findColByMonthLabel(headerRow, monthLabel){
+    if (!headerRow) return -1;
+    var ml = String(monthLabel||'').toLowerCase();
+    for (var i=1;i<headerRow.length;i++){
+      var h = String(headerRow[i]||'').toLowerCase();
+      if (h === ml || h.indexOf(ml)===0) return i;
+    }
+    return -1;
+  }
+
+  // Lista nomes de meses no header da aba KPIs (ex: ['Jan/26','Fev/26',...])
+  function kpiMonths(){
+    var d = snap();
+    var rows = (d['KPIs']||[]);
+    var head = rows[2] || [];
+    var out = [];
+    for (var i=1;i<head.length;i++){
+      var h = String(head[i]||'').trim();
+      if (/^[A-Za-z]{3}\/\d{2}$/.test(h)) out.push({label:h, col:i});
+    }
     return out;
   }
-  function monthsList(){ return (typeof MONTHS!=='undefined' && MONTHS.length)?MONTHS:['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']; }
+
+  // Detecta último mês com dados (Receita Bruta != '')
+  function lastMonthWithData(){
+    var months = kpiMonths();
+    var rows = (snap()['KPIs']||[]);
+    var row = findRow(rows, 'Receita Bruta');
+    if (!row) return months.length ? months[months.length-1] : null;
+    var last = null;
+    months.forEach(function(m){
+      var v = String(row[m.col]||'').trim();
+      if (v && v !== '—' && v !== '-') last = m;
+    });
+    return last || (months[0]||null);
+  }
+
+  function numFromBR(s){
+    if (s === null || s === undefined) return NaN;
+    var t = String(s).trim();
+    if (!t || t === '—' || t === '-') return NaN;
+    var neg = /^\(.*\)$/.test(t) || /^-/.test(t);
+    t = t.replace(/[()R$\s%]/g,'').replace(/\./g,'').replace(',','.').replace(/^-/, '');
+    var n = parseFloat(t);
+    if (isNaN(n)) return NaN;
+    return neg ? -n : n;
+  }
+  function fmtBRL(n){
+    if (!isFinite(n)) return '—';
+    if (Math.abs(n) >= 1000000) return 'R$ ' + (n/1000000).toLocaleString('pt-BR',{maximumFractionDigits:2}) + ' Mi';
+    if (Math.abs(n) >= 1000) return 'R$ ' + (n/1000).toLocaleString('pt-BR',{maximumFractionDigits:1}) + ' k';
+    return 'R$ ' + n.toLocaleString('pt-BR',{maximumFractionDigits:0});
+  }
+  function fmtBRLfull(n){
+    if (!isFinite(n)) return '—';
+    return 'R$ ' + n.toLocaleString('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0});
+  }
+  function fmtPct(n, dp){
+    if (!isFinite(n)) return '—';
+    return n.toLocaleString('pt-BR',{minimumFractionDigits:(dp==null?1:dp),maximumFractionDigits:(dp==null?2:dp)}) + '%';
+  }
+  function pctDelta(cur, base){
+    if (!isFinite(cur) || !isFinite(base) || base === 0) return NaN;
+    return ((cur - base) / Math.abs(base)) * 100;
+  }
+  function deltaColor(n){
+    if (!isFinite(n)) return NEU;
+    return n >= 0 ? POS : NEG;
+  }
+
+  // Obtém valor da linha KPIs (string original) para um mês ou coluna YTD
+  function kpiVal(rows, label, col){
+    var r = findRow(rows, label);
+    if (!r || col < 0) return '';
+    return String(r[col]||'').trim();
+  }
+  function kpiNum(rows, label, col){ return numFromBR(kpiVal(rows, label, col)); }
+
+  // ---------------- MODAL: estado dinâmico ----------------
+  // Catálogo de slides do Caderno
+  var SLIDE_CATALOG = [
+    {id:'cover',     label:'Capa do Caderno',                          on:true,  group:'Abertura'},
+    {id:'execsum',   label:'Resumo Executivo (KPIs + destaques)',      on:true,  group:'Abertura'},
+    {id:'dre_cmp',   label:'DRE — Comparativo do mês (25 × Orç × 26)', on:true,  group:'Resultado'},
+    {id:'dre_ytd',   label:'DRE — YTD Acumulado',                      on:true,  group:'Resultado'},
+    {id:'yoy',       label:'YoY Consolidado (ano vs ano)',              on:true,  group:'Resultado'},
+    {id:'canais',    label:'Performance por Canal',                     on:true,  group:'Comercial'},
+    {id:'canais_q',  label:'Canal — Trimestral por mês',                on:false, group:'Comercial'},
+    {id:'produtos',  label:'Grupo de Produto — Trimestral',             on:false, group:'Comercial'},
+    {id:'estoque',   label:'Gestão de Estoque',                         on:true,  group:'Operacional'},
+    {id:'eficiencia',label:'Eficiência Operacional / SG&A',             on:true,  group:'Operacional'},
+    {id:'fluxo',     label:'Fluxo de Caixa',                            on:true,  group:'Liquidez'},
+    {id:'endivida',  label:'Endividamento e Indicadores',               on:true,  group:'Liquidez'},
+    {id:'inadimp',   label:'Inadimplência (se disponível)',             on:false, group:'Liquidez'},
+    {id:'criticos',  label:'Pontos Críticos',                            on:true,  group:'Fechamento'},
+    {id:'recs',      label:'Recomendações Estratégicas',                 on:true,  group:'Fechamento'}
+  ];
 
   function buildModal(){
-    var secWrap=document.getElementById('PPTX_SECTIONS');
-    secWrap.innerHTML=availableSections().map(function(s){
-      var checked=(s.id==='dre')?'checked':'';
-      return '<label class="pptx-opt"><input type="checkbox" class="pptx-sec" value="'+s.id+'" '+checked+'> '+s.label+'</label>';
-    }).join('');
-    var mWrap=document.getElementById('PPTX_MONTHS');
-    mWrap.innerHTML=monthsList().map(function(m,i){
-      return '<label class="pptx-opt"><input type="checkbox" class="pptx-mon" value="'+i+'" checked> '+m+'</label>';
-    }).join('');
-  }
-  window.pptxSelectMonths=function(on){
-    document.querySelectorAll('.pptx-mon').forEach(function(c){ c.checked=on; });
-  };
-  window.openPptxModal=function(){ buildModal(); document.getElementById('PPTX_MASK').classList.add('show'); };
-  window.closePptxModal=function(){ document.getElementById('PPTX_MASK').classList.remove('show'); };
-  document.getElementById('PPTX_FAB').addEventListener('click',window.openPptxModal);
-  document.getElementById('PPTX_MASK').addEventListener('click',function(e){ if(e.target.id==='PPTX_MASK') window.closePptxModal(); });
+    // Meses (a partir das KPIs do snapshot)
+    var months = kpiMonths();
+    var last = lastMonthWithData();
+    var mWrap = document.getElementById('PPTX_MONTHS');
+    if (!months.length){
+      mWrap.innerHTML = '<div style="font-size:12px;color:#94a3b8;padding:6px 4px;">Nenhum mês detectado nos dados. Carregue a planilha financeira primeiro.</div>';
+    } else {
+      mWrap.innerHTML = months.map(function(m){
+        var checked = (last && m.label === last.label) ? 'checked' : '';
+        return '<label class="pptx-opt"><input type="checkbox" class="pptx-mon" value="'+m.label+'" data-col="'+m.col+'" '+checked+'> '+m.label+'</label>';
+      }).join('');
+    }
 
-  // Carrega PptxGenJS sob demanda
+    // Slides do caderno (agrupados visualmente)
+    var sWrap = document.getElementById('PPTX_SLIDES');
+    var groups = {};
+    SLIDE_CATALOG.forEach(function(s){ (groups[s.group]=groups[s.group]||[]).push(s); });
+    var html = '';
+    Object.keys(groups).forEach(function(g){
+      html += '<div class="pptx-slidegrp"><div class="pptx-slidegrp-title">'+g+'</div>';
+      groups[g].forEach(function(s){
+        html += '<label class="pptx-opt"><input type="checkbox" class="pptx-slide" value="'+s.id+'" '+(s.on?'checked':'')+'> '+s.label+'</label>';
+      });
+      html += '</div>';
+    });
+    sWrap.innerHTML = html;
+  }
+
+  window.pptxSelectMonths = function(on){
+    document.querySelectorAll('.pptx-mon').forEach(function(c){ c.checked = on; });
+  };
+  window.pptxSelectLastMonth = function(){
+    document.querySelectorAll('.pptx-mon').forEach(function(c){ c.checked = false; });
+    var last = lastMonthWithData();
+    if (last){
+      var el = document.querySelector('.pptx-mon[value="'+last.label+'"]');
+      if (el) el.checked = true;
+    }
+  };
+  window.pptxSelectSlides = function(on){
+    document.querySelectorAll('.pptx-slide').forEach(function(c){ c.checked = on; });
+  };
+
+  window.openPptxModal = function(){ buildModal(); document.getElementById('PPTX_MASK').classList.add('show'); };
+  window.closePptxModal = function(){ document.getElementById('PPTX_MASK').classList.remove('show'); };
+
+  document.getElementById('PPTX_FAB').addEventListener('click', window.openPptxModal);
+  document.getElementById('PPTX_MASK').addEventListener('click', function(e){ if (e.target.id==='PPTX_MASK') window.closePptxModal(); });
+
+  // ---------------- LIB PPTX (lazy load) ----------------
   function loadPptxLib(){
-    return new Promise(function(res,rej){
-      if(window.PptxGenJS){ res(window.PptxGenJS); return; }
-      var s=document.createElement('script');
-      s.src='https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js';
-      s.onload=function(){ window.PptxGenJS?res(window.PptxGenJS):rej(new Error('lib')); };
-      s.onerror=function(){ rej(new Error('Falha ao carregar a biblioteca de apresentação. Verifique a internet.')); };
+    return new Promise(function(res, rej){
+      if (window.PptxGenJS){ res(window.PptxGenJS); return; }
+      var s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pptxgenjs/3.12.0/pptxgen.bundle.min.js';
+      s.onload = function(){ window.PptxGenJS ? res(window.PptxGenJS) : rej(new Error('Falha ao carregar a biblioteca de apresentação.')); };
+      s.onerror = function(){ rej(new Error('Falha ao carregar a biblioteca de apresentação (verifique a internet).')); };
       document.head.appendChild(s);
     });
   }
 
-  function renderSection(id){
-    var map={dre:['renderDRE'],'dre-ecom':['renderDreEcom','renderDREEcom','renderEcomDRE'],
-      taxes:['renderTaxes'],compare:['renderCompare'],'compare-ecom':['renderCompareEcom'],
-      products:['renderProducts'],estados:['renderEstados'],'canais-consolidados':['renderCanaisConsolidados'],
-      overview:['renderOverview']};
-    (map[id]||[]).forEach(function(fn){ try{ if(typeof window[fn]==='function') window[fn](); }catch(e){} });
-  }
+  // ---------------- COMPONENTES VISUAIS DOS SLIDES ----------------
+  var SLIDE_W = 13.333, SLIDE_H = 7.5;
+  var MARGIN  = 0.55;
 
-  function cellText(td){ return (td.textContent||'').replace(/\s+/g,' ').trim()||'—'; }
-
-  // Tabela tipo DRE (class "dre"): col0 + 12 meses(2 cols cada: R$ e AV%) + total(2). Extrai só R$.
-  // resumo=true -> mantém apenas linhas principais (nível 1 da DRE).
-  function extractDreTable(tbl,selMon,resumo){
-    var head=['Conta'];
-    selMon.forEach(function(i){ head.push(monthsList()[i]); });
-    head.push('Total');
-    var rows=[head];
-    tbl.querySelectorAll('tbody tr').forEach(function(tr){
-      if(resumo && !tr.classList.contains('lvl-1')) return;   // só linhas principais
-      var tds=tr.children; if(!tds.length) return;
-      var row=[cellText(tds[0])];
-      selMon.forEach(function(i){ var idx=1+i*2; row.push(tds[idx]?cellText(tds[idx]):'—'); });
-      var totIdx=1+12*2; row.push(tds[totIdx]?cellText(tds[totIdx]):'—');
-      rows.push(row);
+  function addWordmark(sl){
+    sl.addText('LENVIE', {
+      x:9.93, y:0.30, w:3.0, h:0.4, fontFace:'Arial', fontSize:13,
+      color:BRAND.mono3, bold:true, charSpacing:4, align:'right', valign:'middle'
     });
-    return rows;
   }
-
-  // Tabela genérica: filtra colunas de meses não selecionados quando detectados no cabeçalho.
-  // resumo=true + tabela com linhas "lvl-1" -> mantém só as principais (ex.: DRE comparativa).
-  function extractGeneric(tbl,selMon,resumo){
-    var ml=monthsList();
-    var selSet={}; selMon.forEach(function(i){ selSet[ml[i].toLowerCase().slice(0,3)]=true; });
-    var headRow=tbl.querySelector('thead tr')||tbl.querySelector('tr');
-    if(!headRow) return null;
-    var headCells=Array.prototype.slice.call(headRow.children);
-    var keep=[]; var hasMonthCols=false;
-    headCells.forEach(function(th,idx){
-      var t=cellText(th).toLowerCase().slice(0,3);
-      var isMonth=ml.some(function(m){ return m.toLowerCase().slice(0,3)===t; });
-      if(isMonth){ hasMonthCols=true; if(selSet[t]) keep.push(idx); }
-      else keep.push(idx);
-    });
-    if(!hasMonthCols) keep=headCells.map(function(_,i){return i;});
-
-    var hasLvl1=!!tbl.querySelector('tbody tr.lvl-1, tr.lvl-1');
-    function pushRow(tr,out){
-      var cells=Array.prototype.slice.call(tr.children);
-      var row=keep.map(function(ci){ return cells[ci]?cellText(cells[ci]):''; });
-      if(row.join('').length) out.push(row);
+  function addHeader(sl, title, subtitle){
+    sl.background = {color:'FFFFFF'};
+    // Faixa lateral
+    sl.addShape('rect', {x:0, y:0, w:0.12, h:SLIDE_H, fill:{color:BRAND.amarelo}, line:{type:'none'}});
+    sl.addText(title, {x:0.55, y:0.30, w:9.2, h:0.55, fontFace:'Arial', fontSize:22, color:BRAND.dark, bold:true, valign:'middle'});
+    if (subtitle){
+      sl.addText(subtitle, {x:0.55, y:0.82, w:9.2, h:0.40, fontFace:'Arial', fontSize:12, color:BRAND.marrom, valign:'middle'});
     }
-    var out=[];
-    // cabeçalhos (sempre mantidos)
-    var headerTrs=tbl.querySelectorAll('thead tr');
-    if(headerTrs.length){ headerTrs.forEach(function(tr){ pushRow(tr,out); }); }
-    else { pushRow(headRow,out); }
-    // corpo (filtra para principais quando resumo)
-    tbl.querySelectorAll('tbody tr').forEach(function(tr){
-      if(resumo && hasLvl1 && !tr.classList.contains('lvl-1')) return;
-      pushRow(tr,out);
-    });
-    return out;
+    addWordmark(sl);
+    // Linha divisória
+    sl.addShape('line', {x:0.55, y:1.30, w:12.2, h:0, line:{color:BRAND.amarelo, width:1.5}});
   }
-
-  function tableToRows(tbl,selMon,resumo){
-    if(tbl.classList.contains('dre')) return extractDreTable(tbl,selMon,resumo);
-    return extractGeneric(tbl,selMon,resumo);
-  }
-
-  // ---- Paleta de variação (verde/vermelho legíveis, harmonizados à marca) ----
-  var POS_GREEN='3F7D3A', NEG_RED='B23A3A';
-
-  function isNumericCell(s){
-    s=String(s||'').trim();
-    if(!s||s==='—') return false;
-    if(!/\d/.test(s)) return false;                 // precisa ter dígito
-    var letters=(s.match(/[A-Za-zÀ-ÿ]/g)||[]).length;
-    return letters<=2;                              // tolera "R$", "Mai" etc. pouco texto
-  }
-  // Decide alinhamento por coluna: texto -> esquerda, número -> direita
-  function columnAligns(rows){
-    if(!rows.length) return [];
-    var ncol=rows[0].length, aligns=[];
-    for(var c=0;c<ncol;c++){
-      if(c===0){ aligns.push('left'); continue; }   // 1ª coluna é sempre rótulo
-      var num=0,tot=0;
-      for(var ri=1;ri<rows.length;ri++){
-        var v=(rows[ri][c]!=null)?String(rows[ri][c]).trim():'';
-        if(!v||v==='—') continue;
-        tot++; if(isNumericCell(v)) num++;
-      }
-      aligns.push((tot>0 && num/tot>=0.5)?'right':'left');
+  function addFooter(sl, pageNum, totalPages){
+    sl.addText('Caderno Financeiro · LENVIE', {x:0.55, y:7.10, w:6, h:0.3, fontFace:'Arial', fontSize:9, color:BRAND.mono3, italic:true});
+    if (pageNum && totalPages){
+      sl.addText(pageNum + ' / ' + totalPages, {x:11.5, y:7.10, w:1.3, h:0.3, fontFace:'Arial', fontSize:9, color:BRAND.mono3, align:'right'});
     }
-    return aligns;
-  }
-  // Variação: + / ▲ verde, - / ▼ / (parênteses) vermelho. null = sem cor.
-  function variationColor(s){
-    s=String(s||'').trim();
-    if(!/\d/.test(s)) return null;
-    var core=s.replace(/^[R$\s]+/i,'');               // remove prefixo "R$ " p/ achar o sinal
-    if(/^[+▲↑]/.test(core)) return POS_GREEN;
-    if(/^[-▼↓]/.test(core) || /^\(.*\)$/.test(s)) return NEG_RED;  // "R$ -2.200,00" ou "(1.234)"
-    return null;
-  }
-  function isTotalRow(label){
-    var s=String(label||'').trim().toLowerCase();
-    if(/^total\b/.test(s)) return true;
-    if(/receita (bruta|l[ií]quida)/.test(s)) return true;
-    if(/lucro (bruto|l[ií]quido|operacional)/.test(s)) return true;
-    if(/resultado( |$)/.test(s)) return true;          // "Resultado Operacional/Líquido/..."
-    if(/ebitda/.test(s)) return true;
-    if(/margem (bruta|l[ií]quida|operacional|de)/.test(s)) return true;
-    return false;                                       // ex.: "Sabonete Líquido" NÃO é total
   }
 
-  // Constrói as células estilizadas de UM bloco (cabeçalho + corpo) já com alinhamento
-  function styledTableRows(headerRow, bodyRows, aligns){
-    var out=[];
-    out.push(headerRow.map(function(cell,ci){
-      return {text:String(cell),options:{
-        fill:BRAND.dark, color:BRAND.off, bold:true, fontSize:9,
-        align:aligns[ci]||'left', valign:'middle'}};
+  // Card de KPI
+  function kpiCard(sl, x, y, w, h, label, value, deltaText, deltaColorHex, hint){
+    sl.addShape('roundRect', {x:x, y:y, w:w, h:h, rectRadius:0.08,
+      fill:{color:'FFFFFF'}, line:{color:'E3DCCB', width:1},
+      shadow:{type:'outer', color:'D8D2BD', opacity:0.45, blur:6, offset:2, angle:90}});
+    // Cabeçalho com cor da marca
+    sl.addShape('roundRect', {x:x, y:y, w:w, h:0.32, rectRadius:0.08, fill:{color:BRAND.dark}, line:{type:'none'}});
+    sl.addText(String(label||'').toUpperCase(), {x:x+0.15, y:y+0.02, w:w-0.3, h:0.28,
+      fontFace:'Arial', fontSize:9, color:BRAND.amarelo, bold:true, charSpacing:2, valign:'middle'});
+
+    // Valor central
+    sl.addText(String(value||'—'), {x:x+0.15, y:y+0.40, w:w-0.3, h:0.55,
+      fontFace:'Arial', fontSize:20, color:BRAND.dark, bold:true, valign:'middle'});
+    // Delta
+    if (deltaText){
+      sl.addText(String(deltaText), {x:x+0.15, y:y+1.00, w:w-0.3, h:0.30,
+        fontFace:'Arial', fontSize:10.5, color:(deltaColorHex||NEU), bold:true, valign:'middle'});
+    }
+    // Hint
+    if (hint){
+      sl.addText(String(hint), {x:x+0.15, y:y+1.28, w:w-0.3, h:0.28,
+        fontFace:'Arial', fontSize:9, color:BRAND.marrom, italic:true, valign:'middle'});
+    }
+  }
+
+  function sectionDivider(pptx, label, subtitle){
+    var sl = pptx.addSlide();
+    sl.background = {color:BRAND.dark};
+    sl.addShape('rect', {x:0, y:3.0, w:SLIDE_W, h:0.06, fill:{color:BRAND.amarelo}, line:{type:'none'}});
+    sl.addText(String(label||'').toUpperCase(), {x:0.6, y:3.20, w:12.2, h:0.9,
+      fontFace:'Arial', fontSize:38, color:'FFFFFF', bold:true, charSpacing:6});
+    if (subtitle){
+      sl.addText(String(subtitle), {x:0.6, y:4.10, w:12.2, h:0.55,
+        fontFace:'Arial', fontSize:16, color:BRAND.amarelo});
+    }
+    sl.addText('LENVIE', {x:0.6, y:6.60, w:12.2, h:0.4, fontFace:'Arial', fontSize:12,
+      color:BRAND.mono3, bold:true, charSpacing:6});
+    return sl;
+  }
+
+  // Tabela estilizada (header amarelo, zebrado, totals destacados)
+  function styledTable(pptx, sl, rows, opts){
+    opts = opts || {};
+    if (!rows || rows.length < 1) return;
+    var header = rows[0];
+    var body   = rows.slice(1);
+
+    function isTotalRow(label){
+      var s = String(label||'').toLowerCase();
+      if (/^total/.test(s)) return true;
+      if (/receita (bruta|l[ií]quida)/.test(s)) return true;
+      if (/lucro (bruto|l[ií]quido|operacional)/.test(s)) return true;
+      if (/^ebitda/.test(s)) return true;
+      if (/^margem /.test(s)) return true;
+      if (/^resultado/.test(s)) return true;
+      return false;
+    }
+    function variationColor(s){
+      s = String(s||'').trim();
+      if (!/\d/.test(s)) return null;
+      if (/^[+▲↑]/.test(s)) return POS;
+      if (/^[-▼↓]/.test(s) || /^\(.*\)$/.test(s)) return NEG;
+      return null;
+    }
+    var styled = [];
+    styled.push(header.map(function(c, ci){
+      return {text:String(c==null?'':c), options:{
+        fill:BRAND.dark, color:BRAND.amarelo, bold:true,
+        fontSize:9.5, align:(ci===0?'left':'right'), valign:'middle'}};
     }));
-    bodyRows.forEach(function(r,bi){
-      var totalRow=isTotalRow(r[0]);
-      out.push(r.map(function(cell,ci){
-        var align=aligns[ci]||'left';
-        var color, fill, bold=false;
-        if(totalRow){
-          fill=BRAND.amarelo; color=BRAND.dark; bold=true;
+    body.forEach(function(r, bi){
+      var total = isTotalRow(r[0]);
+      styled.push(r.map(function(c, ci){
+        var txt = (c==null?'':String(c));
+        var align = (ci===0?'left':'right');
+        var fill, color, bold=false;
+        if (total){
+          fill = BRAND.amarelo; color = BRAND.dark; bold = true;
         } else {
-          fill=(bi%2)?'F6F2E8':'FFFFFF'; color='2A2E2D';
-          var vc=(ci>0)?variationColor(cell):null;
-          if(vc){ color=vc; bold=true; }
+          fill = (bi%2) ? 'F6F2E8' : 'FFFFFF';
+          color = BRAND.dark;
+          var vc = (ci>0) ? variationColor(txt) : null;
+          if (vc){ color = vc; bold = true; }
         }
-        return {text:String(cell),options:{fill:fill,color:color,bold:bold,fontSize:8.5,align:align,valign:'middle'}};
+        return {text:txt, options:{fill:fill, color:color, bold:bold, fontSize:9, align:align, valign:'middle'}};
       }));
     });
-    return out;
+
+    sl.addTable(styled, Object.assign({
+      x:opts.x||MARGIN, y:opts.y||1.50, w:opts.w||(SLIDE_W-2*MARGIN),
+      colW:opts.colW, rowH:opts.rowH||0.32, valign:'middle',
+      border:{type:'solid', pt:0.5, color:'E3DCCB'},
+      margin:[2,4,2,4], autoPage:false
+    }, opts));
   }
 
-  // Wordmark "LENVIE" no canto superior direito dos slides de conteúdo
-  function addWordmark(sl){
-    sl.addText('LENVIE',{x:9.93,y:0.32,w:3.0,h:0.4,fontFace:'Arial',fontSize:13,
-      color:BRAND.mono3,bold:true,charSpacing:4,align:'right',valign:'middle'});
-  }
-  // Cabeçalho padrão (título à esquerda + wordmark à direita) sobre fundo branco
-  function addHeader(sl,title){
-    sl.background={color:'FFFFFF'};
-    sl.addText(title,{x:0.55,y:0.30,w:9.2,h:0.55,fontFace:'Arial',fontSize:24,
-      color:BRAND.dark,bold:true,valign:'middle'});
-    addWordmark(sl);
+  // ---------------- BUILDERS DE SLIDES ----------------
+
+  function slideCover(pptx, ctx){
+    var sl = pptx.addSlide();
+    sl.background = {color:BRAND.off};
+    sl.addShape('rect', {x:0, y:6.4, w:SLIDE_W, h:0.10, fill:{color:BRAND.amarelo}, line:{type:'none'}});
+
+    sl.addText('CADERNO', {x:0.85, y:1.10, w:11.6, h:1.10, fontFace:'Arial', fontSize:64,
+      color:BRAND.dark, bold:true, charSpacing:10});
+    sl.addText('FINANCEIRO', {x:0.85, y:2.10, w:11.6, h:1.10, fontFace:'Arial', fontSize:64,
+      color:BRAND.amarelo, bold:true, charSpacing:10});
+
+    sl.addText(ctx.coverPeriod, {x:0.9, y:3.45, w:11.5, h:0.5, fontFace:'Arial',
+      fontSize:22, color:BRAND.marrom, bold:true});
+
+    sl.addText('Demonstração de Resultados, Liquidez e Endividamento.',
+      {x:0.9, y:4.05, w:11.5, h:0.5, fontFace:'Arial', fontSize:16, color:BRAND.dark});
+
+    // Mini KPI cards na capa
+    var cards = ctx.coverKpis.slice(0,3);
+    var cw = 3.6, gap = 0.45, startX = 0.9, cardY = 4.85, cardH = 1.20;
+    cards.forEach(function(c, i){
+      var cx = startX + i*(cw+gap);
+      sl.addShape('roundRect', {x:cx, y:cardY, w:cw, h:cardH, rectRadius:0.08,
+        fill:{color:BRAND.dark}, line:{type:'none'}});
+      sl.addText(String(c.lbl||'').toUpperCase(), {x:cx+0.25, y:cardY+0.12, w:cw-0.5, h:0.30,
+        fontFace:'Arial', fontSize:10, color:BRAND.mono3, bold:true, charSpacing:2, valign:'middle'});
+      sl.addText(String(c.val||'—'), {x:cx+0.25, y:cardY+0.42, w:cw-0.5, h:0.50,
+        fontFace:'Arial', fontSize:22, color:BRAND.amarelo, bold:true, valign:'middle'});
+      sl.addText(String(c.hint||''), {x:cx+0.25, y:cardY+0.88, w:cw-0.5, h:0.25,
+        fontFace:'Arial', fontSize:9, color:'FFFFFF', italic:true, valign:'middle'});
+    });
+
+    sl.addText('LENVIE', {x:0.9, y:6.60, w:11.5, h:0.5,
+      fontFace:'Arial', fontSize:18, color:BRAND.dark, bold:true, charSpacing:8});
+    sl.addText('Gerado em ' + new Date().toLocaleDateString('pt-BR'),
+      {x:0.9, y:7.00, w:11.5, h:0.35, fontFace:'Arial', fontSize:10, color:BRAND.marrom});
   }
 
-  // Coleta KPIs reais do dashboard (.result-card / .kpis) de forma defensiva
-  function collectKpis(){
-    var out=[];
-    try{
-      var cards=document.querySelectorAll('.result-card, .kpis .kpi, .kpis > div');
-      cards.forEach(function(el){
-        if(out.length>=3) return;
-        var l=el.querySelector('.lbl,.label,.kpi-label,h4');
-        var v=el.querySelector('.val,.value,.kpi-value,.num');
-        if(!l||!v) return;
-        var lt=(l.textContent||'').replace(/\s+/g,' ').trim();
-        var vt=(v.textContent||'').replace(/\s+/g,' ').trim();
-        if(!lt||!vt||vt==='—') return;
-        out.push({lbl:lt,val:vt});
+  function slideExecSum(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Resumo Executivo', ctx.refMonthLabel + ' · Demonstração de Resultados');
+
+    // 4 KPIs principais
+    var rows = (snap()['KPIs']||[]);
+    var col = ctx.refCol;
+    var col25 = findColByMonthLabel(rows[2], ctx.refMonthLabel.replace('/26','/25')); // tentativa
+    // Para Δ vs 25 usa coluna 'Δ vs 25' do YTD (col 9) só se mês = último; caso contrário, usa heurística
+    var yidx = (rows[2]||[]).findIndex(function(h){ return String(h).indexOf('Δ vs 25')===0; });
+
+    function rowKpi(label){
+      var r = findRow(rows, label);
+      return r ? {raw:String(r[col]||''), num:numFromBR(r[col]),
+                  d25raw:(yidx>=0?String(r[yidx]||''):''), d25num:(yidx>=0?numFromBR(r[yidx]):NaN)} : null;
+    }
+
+    var k1 = rowKpi('Receita Bruta');
+    var k2 = rowKpi('Receita Líquida');
+    var k3 = rowKpi('EBITDA');
+    var k4 = rowKpi('Lucro Bruto');
+    var mb = rowKpi('Margem Bruta');
+    var meb = rowKpi('Margem EBITDA');
+    var ml = rowKpi('Margem Líquida');
+
+    // 4 cards principais (linha 1)
+    var cardW = 2.95, cardH = 1.65, gap = 0.15, y0 = 1.55, x0 = 0.55;
+    function drawCard(i, lbl, v, dn, hint){
+      var x = x0 + i*(cardW+gap);
+      kpiCard(sl, x, y0, cardW, cardH, lbl,
+        isFinite(v)?fmtBRLfull(v):'—',
+        isFinite(dn)?( (dn>=0?'+':'') + fmtPct(dn) + ' vs Mar/25' ):'',
+        deltaColor(dn), hint||'');
+    }
+    drawCard(0, 'Receita Bruta',   k1?k1.num:NaN, k1?k1.d25num:NaN, '');
+    drawCard(1, 'Receita Líquida', k2?k2.num:NaN, k2?k2.d25num:NaN, '');
+    drawCard(2, 'EBITDA',          k3?k3.num:NaN, k3?k3.d25num:NaN, meb?('Mg EBITDA: '+meb.raw):'');
+    drawCard(3, 'Lucro Bruto',     k4?k4.num:NaN, k4?k4.d25num:NaN, mb?('Margem: '+mb.raw):'');
+
+    // Box "Destaques do Período"
+    sl.addShape('roundRect', {x:0.55, y:3.40, w:6.05, h:3.45, rectRadius:0.08,
+      fill:{color:'FBF9F2'}, line:{color:'E3DCCB', width:1}});
+    sl.addText('DESTAQUES DO PERÍODO', {x:0.75, y:3.50, w:5.7, h:0.35,
+      fontFace:'Arial', fontSize:11, color:BRAND.dark, bold:true, charSpacing:2});
+    sl.addText(ctx.refMonthLabel, {x:0.75, y:3.80, w:5.7, h:0.30,
+      fontFace:'Arial', fontSize:10, color:BRAND.marrom, italic:true});
+
+    // 4 highlights computados
+    var highlights = [];
+    if (k1 && isFinite(k1.d25num)) highlights.push({lbl:'Crescimento de Receita', val:(k1.d25num>=0?'+':'')+fmtPct(k1.d25num)+' vs 2025 · '+fmtBRL(k1.num), color:deltaColor(k1.d25num)});
+    if (k3 && isFinite(k3.d25num)) highlights.push({lbl:'EBITDA', val:(k3.d25num>=0?'+':'')+fmtPct(k3.d25num)+' vs 2025 · '+fmtBRL(k3.num), color:deltaColor(k3.d25num)});
+    if (mb) highlights.push({lbl:'Margem Bruta', val:mb.raw+' | sólida', color:BRAND.dark});
+    if (ml) highlights.push({lbl:'Margem Líquida', val:ml.raw, color:BRAND.dark});
+    while (highlights.length < 4) highlights.push({lbl:'—', val:'—', color:NEU});
+
+    var hy = 4.20, hh = 0.62;
+    highlights.slice(0,4).forEach(function(h, i){
+      var y = hy + i*hh;
+      sl.addShape('rect', {x:0.85, y:y+0.10, w:0.10, h:0.4, fill:{color:h.color}, line:{type:'none'}});
+      sl.addText(h.lbl, {x:1.05, y:y, w:5.4, h:0.30, fontFace:'Arial', fontSize:11, color:BRAND.dark, bold:true});
+      sl.addText(h.val, {x:1.05, y:y+0.28, w:5.4, h:0.30, fontFace:'Arial', fontSize:10, color:h.color, bold:true});
+    });
+
+    // Box "YTD"
+    sl.addShape('roundRect', {x:6.75, y:3.40, w:6.05, h:3.45, rectRadius:0.08,
+      fill:{color:BRAND.dark}, line:{type:'none'}});
+    sl.addText('YTD ' + ctx.ytdLabel, {x:6.95, y:3.50, w:5.7, h:0.35,
+      fontFace:'Arial', fontSize:11, color:BRAND.amarelo, bold:true, charSpacing:2});
+    sl.addText('Acumulado', {x:6.95, y:3.80, w:5.7, h:0.30,
+      fontFace:'Arial', fontSize:10, color:BRAND.mono3, italic:true});
+
+    // YTD KPIs
+    var col_ytd = (rows[2]||[]).findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+    var col_d25 = (rows[2]||[]).findIndex(function(h){ return String(h).indexOf('Δ vs 25')===0; });
+    function ytdRow(label){
+      var r = findRow(rows, label);
+      if (!r) return null;
+      return {raw:r[col_ytd]||'', num:numFromBR(r[col_ytd]), d:numFromBR(r[col_d25]), draw:String(r[col_d25]||'')};
+    }
+    var ytdRows = [
+      {lbl:'Receita Acumulada', d:ytdRow('Receita Bruta')},
+      {lbl:'EBITDA Acumulado',  d:ytdRow('EBITDA')},
+      {lbl:'Lucro Bruto Acum.', d:ytdRow('Lucro Bruto')},
+      {lbl:'Lucro Líquido Acum.', d:ytdRow('Lucro Líquido')}
+    ];
+    ytdRows.forEach(function(r, i){
+      var y = 4.20 + i*0.62;
+      sl.addText(r.lbl, {x:6.95, y:y, w:5.4, h:0.28, fontFace:'Arial', fontSize:11, color:'FFFFFF'});
+      if (r.d){
+        sl.addText(fmtBRL(r.d.num), {x:6.95, y:y+0.26, w:3.0, h:0.32,
+          fontFace:'Arial', fontSize:14, color:BRAND.amarelo, bold:true});
+        var dt = isFinite(r.d.d) ? ((r.d.d>=0?'+':'')+fmtPct(r.d.d,1)+' vs 25') : '';
+        sl.addText(dt, {x:9.95, y:y+0.26, w:2.7, h:0.32, fontFace:'Arial',
+          fontSize:10, color:(deltaColor(r.d.d)===POS?'9AE39A':'FFB3B3'), bold:true, align:'right'});
+      } else {
+        sl.addText('—', {x:6.95, y:y+0.26, w:5.4, h:0.32, fontFace:'Arial', fontSize:14, color:'FFFFFF'});
+      }
+    });
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideDREComparativo(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'DRE — Comparativo ' + ctx.refMonthLabel,
+      'Realizado ' + ctx.refMonthLabel.replace('/26','/25') + '  ×  Orçado ' + ctx.refMonthLabel + '  ×  Realizado ' + ctx.refMonthLabel);
+
+    var rows = (snap()['KPIs']||[]);
+    var col = ctx.refCol;
+    var labels = ['Receita Bruta','Receita Líquida','Lucro Bruto','EBITDA','EBIT (Operacional)','Lucro Líquido',
+                  'Margem Bruta','Margem EBITDA','Margem Líquida','Carga Tributária (s/ Receita Bruta)'];
+    var hdr2 = rows[2]||[];
+    var colOrc = hdr2.findIndex(function(h){ return String(h).indexOf('YTD Orçado')===0; }); // não temos orçado mensal; usaremos YTD Orçado como referência
+    var colYtdRea = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+    var colYtd25  = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2025')===0; });
+
+    var data = [['Conta', ctx.refMonthLabel.replace('/26','/25'), 'Orçado (YTD)', ctx.refMonthLabel, 'Δ Real vs Orç.']];
+    labels.forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      var v25 = colYtd25>=0 ? r[colYtd25] : '';
+      var vOrc = colOrc>=0 ? r[colOrc] : '';
+      var v26 = r[col]||'';
+      var dnum = pctDelta(numFromBR(v26), numFromBR(vOrc));
+      var dtxt = isFinite(dnum) ? ((dnum>=0?'+':'')+fmtPct(dnum,1)) : '—';
+      data.push([lbl, v25||'—', vOrc||'—', v26||'—', dtxt]);
+    });
+
+    styledTable(pptx, sl, data, {
+      x:0.55, y:1.50, w:12.2,
+      colW:[4.0, 2.0, 2.0, 2.0, 2.2],
+      rowH:0.34
+    });
+
+    // Caixa de insight
+    sl.addShape('roundRect', {x:0.55, y:6.10, w:12.2, h:0.85, rectRadius:0.08,
+      fill:{color:BRAND.dark}, line:{type:'none'}});
+    sl.addText('LEITURA', {x:0.75, y:6.18, w:1.5, h:0.30,
+      fontFace:'Arial', fontSize:10, color:BRAND.amarelo, bold:true, charSpacing:2});
+    var rb = findRow(rows, 'Receita Bruta');
+    var ebt = findRow(rows, 'EBITDA');
+    var msg = 'Realizado ' + ctx.refMonthLabel + ' confrontado ao orçado YTD e ao mesmo período de 2025. ';
+    if (rb && ebt && colYtd25>=0){
+      var dRB = pctDelta(numFromBR(rb[col]), numFromBR(rb[colYtd25])/Math.max(1,ctx.ytdMonths));
+      if (isFinite(dRB)) msg += 'Receita Bruta '+(dRB>=0?'cresce ':'recua ')+fmtPct(Math.abs(dRB),1)+' vs média 2025. ';
+    }
+    sl.addText(msg, {x:2.30, y:6.18, w:10.3, h:0.65,
+      fontFace:'Arial', fontSize:10, color:'FFFFFF', valign:'middle'});
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideDREYTD(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'DRE YTD — Acumulado ' + ctx.ytdLabel, 'Realizado · Orçado · Variação');
+
+    var rows = (snap()['KPIs']||[]);
+    var hdr2 = rows[2]||[];
+    var colReal = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+    var col25   = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2025')===0; });
+    var colOrc  = hdr2.findIndex(function(h){ return String(h).indexOf('YTD Orçado')===0; });
+    var colD25  = hdr2.findIndex(function(h){ return String(h).indexOf('Δ vs 25')===0; });
+    var colDOr  = hdr2.findIndex(function(h){ return String(h).indexOf('Δ vs Orç')===0; });
+
+    var labels = ['Receita Bruta','Receita Líquida','Lucro Bruto','EBITDA','Lucro Líquido',
+                  'Margem Bruta','Margem EBITDA','Margem Líquida','CMV (s/ Receita Líquida)','Despesas Operacionais (s/ Líquida)','Carga Tributária (s/ Receita Bruta)'];
+    var data = [['Conta','Real 2025','Orçado','Real 2026','Δ vs 25','Δ vs Orç.']];
+    labels.forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      data.push([lbl,
+        r[col25]||'—', r[colOrc]||'—', r[colReal]||'—',
+        r[colD25]||'—', r[colDOr]||'—'
+      ]);
+    });
+
+    styledTable(pptx, sl, data, {
+      x:0.55, y:1.50, w:12.2,
+      colW:[3.6, 1.7, 1.7, 1.7, 1.75, 1.75],
+      rowH:0.32
+    });
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideYoY(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'YoY Consolidado — ' + ctx.ytdLabel + ' 2026 vs ' + ctx.ytdLabel + ' 2025',
+      'Comparativo ano contra ano (acumulado)');
+
+    var rows = (snap()['KPIs']||[]);
+    var hdr2 = rows[2]||[];
+    var colReal = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+    var col25   = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2025')===0; });
+    var colD25  = hdr2.findIndex(function(h){ return String(h).indexOf('Δ vs 25')===0; });
+
+    // 4 cards comparativos
+    var labels = [
+      {k:'Receita Bruta', l:'Receita Bruta'},
+      {k:'Receita Líquida', l:'Receita Líquida'},
+      {k:'Lucro Bruto', l:'Lucro Bruto'},
+      {k:'EBITDA', l:'EBITDA'}
+    ];
+    var cardW = 2.95, cardH = 1.65, gap=0.15, y0=1.55, x0=0.55;
+    labels.forEach(function(it, i){
+      var r = findRow(rows, it.k);
+      var v25 = r ? numFromBR(r[col25]) : NaN;
+      var v26 = r ? numFromBR(r[colReal]) : NaN;
+      var d   = r ? numFromBR(r[colD25])  : NaN;
+      var x = x0 + i*(cardW+gap);
+      kpiCard(sl, x, y0, cardW, cardH, it.l,
+        fmtBRL(v26),
+        (isFinite(d) ? ((d>=0?'+':'') + fmtPct(d,1) + ' YoY') : '—'),
+        deltaColor(d),
+        '2025: ' + fmtBRL(v25));
+    });
+
+    // Tabela detalhada YoY com mais linhas
+    var detLabels = ['Receita Bruta','Receita Líquida','Lucro Bruto','EBITDA','Lucro Líquido',
+                     'Margem Bruta','Margem EBITDA','Margem Líquida'];
+    var data = [['Indicador', ctx.ytdLabel+' 2025', ctx.ytdLabel+' 2026', 'Variação']];
+    detLabels.forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      data.push([lbl, r[col25]||'—', r[colReal]||'—', r[colD25]||'—']);
+    });
+    styledTable(pptx, sl, data, {
+      x:0.55, y:3.45, w:12.2,
+      colW:[4.5, 2.5, 2.5, 2.7],
+      rowH:0.31
+    });
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideCanais(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Performance por Canal — ' + ctx.refMonthLabel, 'Mix de Receita Líquida (%) e Margem Bruta (%) por canal');
+
+    var rows = (snap()['KPIs']||[]);
+    var col = ctx.refCol;
+    var canais = ['Atacado','E-commerce','MP – Camicado','MP – Tok&Stok','MP – Vivara','MP – Outras'];
+
+    // Identifica seções: indices das categorias "MIX DE RECEITA LÍQUIDA POR CANAL" e "MARGEM BRUTA POR CANAL"
+    var mixStart = rows.findIndex(function(r){ return /MIX DE RECEITA L[ÍI]QUIDA POR CANAL/i.test(r[0]); });
+    var mgStart  = rows.findIndex(function(r){ return /MARGEM BRUTA POR CANAL/i.test(r[0]); });
+
+    function pickByRange(label, start){
+      if (start < 0) return null;
+      for (var i=start+1; i<rows.length; i++){
+        var c0 = String(rows[i][0]||'').trim();
+        if (!c0) continue;
+        if (/^[A-Z\s\(\)/]+$/.test(c0) && c0.length>15) break; // próxima seção em CAPS
+        if (c0.toLowerCase() === label.toLowerCase()) return rows[i];
+      }
+      return null;
+    }
+
+    var data = [['Canal','Mix % ('+ctx.refMonthLabel+')','Margem Bruta (%)','Mix YTD','Margem YTD']];
+    var hdr2 = rows[2]||[];
+    var colYtd = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+
+    canais.forEach(function(can){
+      var rMix = pickByRange(can, mixStart);
+      var rMg  = pickByRange(can, mgStart);
+      data.push([
+        can,
+        rMix ? (rMix[col]||'—') : '—',
+        rMg  ? (rMg[col]||'—')  : '—',
+        rMix ? (rMix[colYtd]||'—') : '—',
+        rMg  ? (rMg[colYtd]||'—')  : '—'
+      ]);
+    });
+
+    styledTable(pptx, sl, data, {
+      x:0.55, y:1.50, w:12.2,
+      colW:[3.5, 2.2, 2.2, 2.2, 2.1],
+      rowH:0.35
+    });
+
+    // Insights
+    sl.addShape('roundRect', {x:0.55, y:5.40, w:12.2, h:1.55, rectRadius:0.08,
+      fill:{color:'FBF9F2'}, line:{color:'E3DCCB', width:1}});
+    sl.addText('INSIGHTS DE MIX', {x:0.75, y:5.50, w:5.0, h:0.30,
+      fontFace:'Arial', fontSize:11, color:BRAND.dark, bold:true, charSpacing:2});
+    sl.addText('• Concentração por canal e margens diferenciadas — observar dependência de poucos canais.\n' +
+               '• Variações no mix afetam diretamente a margem bruta consolidada do período.\n' +
+               '• Acompanhar maturidade de Marketplaces vs. canais diretos (E-commerce/Atacado).',
+      {x:0.75, y:5.82, w:11.85, h:1.10, fontFace:'Arial', fontSize:10.5, color:BRAND.dark, valign:'top'});
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideCanaisTrim(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Canal — Análise Trimestral', 'Receita Líquida por canal, mês a mês');
+
+    var rows = (snap()['KPIs']||[]);
+    var hdr2 = rows[2]||[];
+    var months = kpiMonths().slice(0, Math.min(5, kpiMonths().length));
+    var mixStart = rows.findIndex(function(r){ return /MIX DE RECEITA L[ÍI]QUIDA POR CANAL/i.test(r[0]); });
+    var canais = ['Atacado','E-commerce','MP – Camicado','MP – Tok&Stok','MP – Vivara','MP – Outras'];
+
+    function pickByRange(label, start){
+      if (start < 0) return null;
+      for (var i=start+1; i<rows.length; i++){
+        var c0 = String(rows[i][0]||'').trim();
+        if (!c0) continue;
+        if (/^[A-Z\s\(\)/]+$/.test(c0) && c0.length>15) break;
+        if (c0.toLowerCase() === label.toLowerCase()) return rows[i];
+      }
+      return null;
+    }
+
+    var head = ['Canal'].concat(months.map(function(m){ return m.label; }));
+    var data = [head];
+    canais.forEach(function(can){
+      var r = pickByRange(can, mixStart);
+      if (!r) return;
+      var line = [can];
+      months.forEach(function(m){ line.push(r[m.col]||'—'); });
+      data.push(line);
+    });
+
+    styledTable(pptx, sl, data, {x:0.55, y:1.50, w:12.2, rowH:0.36});
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideProdutos(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Grupo de Produto', 'Análise por categoria — Receita / Margem');
+
+    // Tenta extrair de window.PRODUCT_DATA ou do tab-products / tab-estados — se não disponível, placeholder
+    var tbl = document.querySelector('#tab-products table');
+    if (tbl){
+      var rowsT = [];
+      var trs = tbl.querySelectorAll('tr');
+      trs.forEach(function(tr){
+        var cells = tr.querySelectorAll('th,td');
+        var line = [];
+        cells.forEach(function(c){ line.push((c.textContent||'').replace(/\s+/g,' ').trim()); });
+        if (line.length) rowsT.push(line);
       });
-    }catch(e){}
-    return out;
+      if (rowsT.length > 1){
+        // limita a 12 linhas
+        var head = rowsT[0];
+        var body = rowsT.slice(1, 13);
+        styledTable(pptx, sl, [head].concat(body), {x:0.55, y:1.50, w:12.2, rowH:0.32});
+      } else {
+        sl.addText('Sem dados tabulares de produtos disponíveis nesta sessão.',
+          {x:0.55, y:3.5, w:12.2, h:0.5, fontFace:'Arial', fontSize:13, color:BRAND.marrom, align:'center'});
+      }
+    } else {
+      sl.addText('Sem dados tabulares de produtos disponíveis nesta sessão.',
+        {x:0.55, y:3.5, w:12.2, h:0.5, fontFace:'Arial', fontSize:13, color:BRAND.marrom, align:'center'});
+    }
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
   }
 
-  window.generatePptx=function(){
-    var btn=document.getElementById('PPTX_GO');
-    var secs=Array.prototype.slice.call(document.querySelectorAll('.pptx-sec:checked')).map(function(c){return c.value;});
-    var selMon=Array.prototype.slice.call(document.querySelectorAll('.pptx-mon:checked')).map(function(c){return parseInt(c.value);});
-    var incCharts=document.getElementById('PPTX_CHARTS').checked;
-    var resumo=(document.getElementById('PPTX_RESUMO')||{}).checked!==false;  // padrão: resumida
-    if(!secs.length){ alert('Selecione ao menos uma seção.'); return; }
-    if(!selMon.length){ alert('Selecione ao menos um mês.'); return; }
-    selMon.sort(function(a,b){return a-b;});
+  function slideEstoque(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Gestão de Estoque — ' + ctx.refMonthLabel, 'Composição, valor total e maturidade');
 
-    btn.disabled=true; btn.textContent='Gerando...';
-    var labels=(typeof TAB_LABELS!=='undefined')?TAB_LABELS:{};
-    var year=(document.getElementById('dre-year')||{}).value||'';
+    var est = snap()['Painel Evolução Estoque'] || [];
+    if (est.length > 1){
+      // Tenta achar header e mês de referência
+      var headRow = null, headIdx = -1;
+      for (var i=0;i<est.length;i++){
+        if (String(est[i][0]||'').toLowerCase().indexOf('conta')===0 || String(est[i][0]||'').toLowerCase().indexOf('item')===0){
+          headRow = est[i]; headIdx = i; break;
+        }
+      }
+      if (!headRow){ headRow = est[2] || est[0]; headIdx = est.indexOf(headRow); }
+      var col = -1;
+      for (var c=1;c<headRow.length;c++){
+        var hh = String(headRow[c]||'').toLowerCase();
+        if (hh.indexOf(ctx.refMonthLabel.toLowerCase())===0){ col = c; break; }
+      }
+      if (col<0) col = Math.min(headRow.length-1, 3);
 
-    // ---- Geometria / paginação ----
-    var SLIDE_W=13.333, SLIDE_H=7.5;
-    var MX=0.55;                       // margem lateral
-    var TABLE_W=SLIDE_W-2*MX;          // largura útil da tabela
-    var TABLE_TOP=1.5;                 // topo da tabela (abaixo do título)
-    var BOTTOM=0.55;                   // margem inferior
-    var HEAD_H=0.36, ROW_H=0.30, PAD=0.1;
-    var AVAIL_H=SLIDE_H-TABLE_TOP-BOTTOM;
-    var MAX_BODY=Math.max(1,Math.floor((AVAIL_H-HEAD_H)/ROW_H)-1); // -1 de folga p/ wrap
+      // pega até 8 linhas com primeira célula não vazia, abaixo do header
+      var data = [['Item', headRow[col]||ctx.refMonthLabel]];
+      for (var k=headIdx+1; k<est.length && data.length<10; k++){
+        var r = est[k];
+        var c0 = String(r[0]||'').trim();
+        if (!c0) continue;
+        data.push([c0, r[col]||'—']);
+      }
+      styledTable(pptx, sl, data, {x:0.55, y:1.50, w:7.5, colW:[5.0, 2.5], rowH:0.34});
+
+      // Box destaque
+      sl.addShape('roundRect', {x:8.30, y:1.50, w:4.45, h:3.30, rectRadius:0.08,
+        fill:{color:BRAND.dark}, line:{type:'none'}});
+      sl.addText('COMPOSIÇÃO', {x:8.50, y:1.60, w:4.0, h:0.30,
+        fontFace:'Arial', fontSize:11, color:BRAND.amarelo, bold:true, charSpacing:2});
+      sl.addText('• Análise do estoque por categoria\n• Identificação de SKUs lentos e itens críticos\n• Maturidade média do inventário',
+        {x:8.50, y:2.00, w:4.0, h:2.70, fontFace:'Arial', fontSize:11, color:'FFFFFF', valign:'top'});
+    } else {
+      sl.addText('Sem dados de estoque disponíveis nesta sessão.',
+        {x:0.55, y:3.5, w:12.2, h:0.5, fontFace:'Arial', fontSize:13, color:BRAND.marrom, align:'center'});
+    }
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideEficiencia(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Eficiência Operacional — ' + ctx.refMonthLabel, 'SG&A, alavancagem operacional e estrutura de custo');
+
+    var rows = (snap()['KPIs']||[]);
+    var col = ctx.refCol;
+    var hdr2 = rows[2]||[];
+    var colYtd = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+
+    var labels = [
+      'Margem Bruta','Margem EBITDA','Margem Líquida',
+      'CMV (s/ Receita Líquida)','Despesas Operacionais (s/ Líquida)','Carga Tributária (s/ Receita Bruta)'
+    ];
+    var data = [['Indicador', ctx.refMonthLabel, 'YTD 2026']];
+    labels.forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      data.push([lbl, r[col]||'—', r[colYtd]||'—']);
+    });
+
+    styledTable(pptx, sl, data, {x:0.55, y:1.50, w:6.5, colW:[3.5, 1.5, 1.5], rowH:0.35});
+
+    // Box SG&A benchmark
+    sl.addShape('roundRect', {x:7.30, y:1.50, w:5.45, h:5.30, rectRadius:0.08,
+      fill:{color:'FBF9F2'}, line:{color:'E3DCCB', width:1}});
+    sl.addText('LEITURA OPERACIONAL', {x:7.50, y:1.62, w:5.0, h:0.30,
+      fontFace:'Arial', fontSize:11, color:BRAND.dark, bold:true, charSpacing:2});
+
+    var dl = findRow(rows, 'Despesas Operacionais (s/ Líquida)');
+    var cm = findRow(rows, 'CMV (s/ Receita Líquida)');
+    var lines = [];
+    if (dl) lines.push('• Despesas Op./Receita Líq.: ' + (dl[col]||'—') + ' (YTD ' + (dl[colYtd]||'—') + ')');
+    if (cm) lines.push('• CMV/Receita Líq.: ' + (cm[col]||'—') + ' (YTD ' + (cm[colYtd]||'—') + ')');
+    lines.push('• Estrutura tributária e composição de custos impactam diretamente a margem EBITDA.');
+    lines.push('• Acompanhar evolução mês a mês para identificar ineficiências.');
+
+    sl.addText(lines.join('\n'), {x:7.50, y:2.00, w:5.0, h:4.70,
+      fontFace:'Arial', fontSize:11, color:BRAND.dark, valign:'top'});
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideFluxo(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Fluxo de Caixa — ' + ctx.refMonthLabel, 'Demonstração do Fluxo de Caixa (DFC) — Método Direto');
+
+    var dfc = snap()['DFC'] || [];
+    // Header da DFC está na linha 2 ('Conta','Jan/26 R','Fev/26 R',...)
+    var hdr = dfc[2] || [];
+    var col = -1;
+    for (var c=1;c<hdr.length;c++){
+      var hh = String(hdr[c]||'').toLowerCase();
+      if (hh.indexOf(ctx.refMonthLabel.toLowerCase())===0) { col = c; break; }
+    }
+    if (col<0) col = 3; // fallback
+    var hCol = hdr[col] || ctx.refMonthLabel;
+
+    var keyLines = [
+      'SALDO INICIAL DE CAIXA',
+      '(=) CAIXA DAS ATIVIDADES OPERACIONAIS (FCO)',
+      '(=) CAIXA DAS ATIVIDADES DE INVESTIMENTO (FCI)',
+      '(=) CAIXA DAS ATIVIDADES DE FINANCIAMENTO (FCF)',
+      'SALDO FINAL DE CAIXA',
+      'GERAÇÃO LÍQUIDA DE CAIXA NO MÊS'
+    ];
+    var data = [['Conta', hCol]];
+    keyLines.forEach(function(lbl){
+      var r = findRow(dfc, lbl);
+      if (r) data.push([lbl, r[col]||'—']);
+    });
+
+    // Se não encontrou linhas-chave, cai para entradas/saídas principais
+    if (data.length <= 2){
+      ['(+) Recebimentos de clientes','(–) Fornecedores','(–) Pessoal','(–) Tributos sobre vendas',
+       '(–) Despesas comerciais','(–) Despesas administrativas (G&A)','(–) Despesas de marketing'
+      ].forEach(function(lbl){
+        var r = findRow(dfc, lbl);
+        if (r) data.push([lbl, r[col]||'—']);
+      });
+    }
+
+    styledTable(pptx, sl, data, {x:0.55, y:1.50, w:7.5, colW:[5.5, 2.0], rowH:0.34});
+
+    // Box explicativo
+    sl.addShape('roundRect', {x:8.30, y:1.50, w:4.45, h:5.30, rectRadius:0.08,
+      fill:{color:BRAND.dark}, line:{type:'none'}});
+    sl.addText('LIQUIDEZ DO PERÍODO', {x:8.50, y:1.62, w:4.0, h:0.30,
+      fontFace:'Arial', fontSize:11, color:BRAND.amarelo, bold:true, charSpacing:2});
+
+    var saldoIni = findRow(dfc, 'SALDO INICIAL DE CAIXA');
+    var saldoFim = findRow(dfc, 'SALDO FINAL DE CAIXA');
+    var ger = findRow(dfc, 'GERAÇÃO LÍQUIDA DE CAIXA NO MÊS');
+    var lines = [];
+    if (saldoIni) lines.push('Saldo Inicial: ' + (saldoIni[col]||'—'));
+    if (saldoFim) lines.push('Saldo Final: ' + (saldoFim[col]||'—'));
+    if (ger)      lines.push('Geração Líquida: ' + (ger[col]||'—'));
+    lines.push('');
+    lines.push('• Atividades Operacionais geralmente lideram o consumo/geração de caixa.');
+    lines.push('• Acompanhar relação entre tributos e despesas operacionais.');
+
+    sl.addText(lines.join('\n'), {x:8.50, y:2.00, w:4.0, h:4.70,
+      fontFace:'Arial', fontSize:11, color:'FFFFFF', valign:'top'});
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideEndividamento(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Endividamento e Indicadores — ' + ctx.refMonthLabel, 'Alavancagem, dívida e liquidez');
+
+    var rows = (snap()['KPIs']||[]);
+    var col = ctx.refCol;
+    var labels = [
+      'Dívida Bruta (R$)','Dívida Líquida (R$)',
+      'Dívida Líquida ÷ EBITDA (anualizado)','Dívida Líquida ÷ PL',
+      'Liquidez Corrente (AC ÷ PC)','Liquidez Seca ((AC−Estoque) ÷ PC)',
+      'NCG — Necessidade de Capital de Giro (R$)','Capital de Giro Líquido — CGL (R$)',
+      'PMR — Prazo Médio de Recebimento (dias)','PME — Prazo Médio de Estoque (dias)',
+      'PMP — Prazo Médio de Pagamento (dias)','Ciclo Operacional (dias)','Ciclo Financeiro (dias)',
+      'ROE — Retorno s/ Patrimônio Líquido','ROA — Retorno s/ Ativo'
+    ];
+    var data = [['Indicador', ctx.refMonthLabel]];
+    labels.forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      data.push([lbl, r[col]||'—']);
+    });
+
+    styledTable(pptx, sl, data, {x:0.55, y:1.50, w:12.2, colW:[7.5, 4.7], rowH:0.30});
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideInadimplencia(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Inadimplência — ' + ctx.refMonthLabel, 'Carteira por faixa de atraso (se disponível)');
+    sl.addText('Dados de inadimplência não foram carregados nesta sessão.\n' +
+               'Caso queira incluir este slide, configure a fonte na aba correspondente.',
+      {x:0.55, y:3.40, w:12.2, h:1.0, fontFace:'Arial', fontSize:13, color:BRAND.marrom, align:'center', valign:'middle'});
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slidePontosCriticos(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Pontos Críticos — ' + ctx.refMonthLabel, 'Itens que exigem atenção do time financeiro');
+
+    var rows = (snap()['KPIs']||[]);
+    var hdr2 = rows[2]||[];
+    var colYtd = hdr2.findIndex(function(h){ return String(h).indexOf('YTD 2026')===0; });
+    var colD25 = hdr2.findIndex(function(h){ return String(h).indexOf('Δ vs 25')===0; });
+    var colDOr = hdr2.findIndex(function(h){ return String(h).indexOf('Δ vs Orç')===0; });
+
+    // Heurística: pega linhas de resultado com Δ vs 25 ou Δ vs Orç pior que -10%
+    var criticos = [];
+    ['EBITDA','Lucro Líquido','Lucro Bruto','Receita Bruta','Receita Líquida','Margem EBITDA','Margem Líquida'].forEach(function(lbl){
+      var r = findRow(rows, lbl);
+      if (!r) return;
+      var d25 = numFromBR(r[colD25]);
+      var dOr = numFromBR(r[colDOr]);
+      var worst = Math.min(isFinite(d25)?d25:0, isFinite(dOr)?dOr:0);
+      if (worst <= -10){
+        criticos.push({
+          lbl:lbl, val:r[colYtd]||'—',
+          d25:r[colD25]||'—', dOr:r[colDOr]||'—',
+          severity: worst <= -25 ? 'CRÍTICO' : 'ATENÇÃO'
+        });
+      }
+    });
+
+    if (!criticos.length){
+      sl.addShape('roundRect', {x:0.55, y:2.0, w:12.2, h:1.2, rectRadius:0.08,
+        fill:{color:'EAF7E8'}, line:{color:POS, width:1}});
+      sl.addText('✔ Sem pontos críticos detectados automaticamente para o período.', {x:0.75, y:2.20, w:11.8, h:0.8,
+        fontFace:'Arial', fontSize:14, color:POS, bold:true, valign:'middle'});
+    } else {
+      criticos.slice(0,5).forEach(function(c, i){
+        var y = 1.55 + i*1.10;
+        var sevColor = c.severity === 'CRÍTICO' ? NEG : 'CA8A04';
+        sl.addShape('roundRect', {x:0.55, y:y, w:12.2, h:0.95, rectRadius:0.08,
+          fill:{color:'FBF9F2'}, line:{color:sevColor, width:1.2}});
+        sl.addShape('rect', {x:0.55, y:y, w:0.18, h:0.95, fill:{color:sevColor}, line:{type:'none'}});
+        sl.addText(c.severity, {x:0.85, y:y+0.10, w:1.5, h:0.30,
+          fontFace:'Arial', fontSize:10, color:sevColor, bold:true, charSpacing:2});
+        sl.addText(c.lbl, {x:0.85, y:y+0.40, w:6.5, h:0.40,
+          fontFace:'Arial', fontSize:13, color:BRAND.dark, bold:true, valign:'middle'});
+        sl.addText('YTD: '+c.val, {x:7.50, y:y+0.10, w:2.5, h:0.40,
+          fontFace:'Arial', fontSize:11, color:BRAND.dark, valign:'middle'});
+        sl.addText('Δ vs 25: '+c.d25, {x:9.80, y:y+0.10, w:1.4, h:0.40,
+          fontFace:'Arial', fontSize:10, color:sevColor, bold:true, valign:'middle'});
+        sl.addText('Δ vs Orç: '+c.dOr, {x:11.00, y:y+0.10, w:1.7, h:0.40,
+          fontFace:'Arial', fontSize:10, color:sevColor, bold:true, valign:'middle'});
+      });
+    }
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  function slideRecomendacoes(pptx, ctx){
+    var sl = pptx.addSlide();
+    addHeader(sl, 'Recomendações Estratégicas', 'Plano de ação para o próximo período');
+
+    var prioridades = [
+      {tag:'ALTA',   color:NEG,
+        items:['Reverter resultado financeiro (recompor EBITDA e lucro líquido)',
+               'Recompor liquidez e melhorar conversão de caixa operacional',
+               'Conter crescimento de estoque até retomar o giro saudável']},
+      {tag:'MÉDIA',  color:'CA8A04',
+        items:['Recuperar margem bruta com renegociação de CMV',
+               'Otimizar despesas operacionais (SG&A) e ganhar alavancagem',
+               'Acelerar o canal comercial com maior contribuição à margem']},
+      {tag:'OBSERVAR', color:BRAND.verde,
+        items:['Monitorar carga tributária e oportunidades de eficiência fiscal',
+               'Acompanhar inadimplência por faixa de envelhecimento',
+               'Revisar capital de giro, prazos médios e ciclo financeiro']}
+    ];
+    var y0 = 1.55, blockH = 1.65, gap = 0.12;
+    prioridades.forEach(function(p, i){
+      var y = y0 + i*(blockH+gap);
+      sl.addShape('roundRect', {x:0.55, y:y, w:12.2, h:blockH, rectRadius:0.08,
+        fill:{color:'FBF9F2'}, line:{color:'E3DCCB', width:1}});
+      sl.addShape('rect', {x:0.55, y:y, w:0.18, h:blockH, fill:{color:p.color}, line:{type:'none'}});
+      sl.addText('PRIORIDADE ' + p.tag, {x:0.85, y:y+0.12, w:3.0, h:0.30,
+        fontFace:'Arial', fontSize:11, color:p.color, bold:true, charSpacing:2});
+      sl.addText(p.items.map(function(it){return '• '+it;}).join('\n'),
+        {x:0.85, y:y+0.45, w:11.6, h:blockH-0.55,
+         fontFace:'Arial', fontSize:11.5, color:BRAND.dark, valign:'top'});
+    });
+
+    addFooter(sl, ctx.pageNum, ctx.totalPages);
+  }
+
+  // ---------------- ORQUESTRAÇÃO ----------------
+  window.generatePptx = function(){
+    var btn = document.getElementById('PPTX_GO');
+    var selSlides = Array.prototype.slice.call(document.querySelectorAll('.pptx-slide:checked'))
+      .map(function(c){ return c.value; });
+    var selMonths = Array.prototype.slice.call(document.querySelectorAll('.pptx-mon:checked'))
+      .map(function(c){ return {label:c.value, col:parseInt(c.getAttribute('data-col'),10)}; });
+
+    if (!selSlides.length){ alert('Selecione ao menos um slide do caderno.'); return; }
+    if (!selMonths.length){ alert('Selecione ao menos um mês de referência.'); return; }
+
+    btn.disabled = true; btn.textContent = 'Gerando...';
 
     loadPptxLib().then(function(Pptx){
-      var pptx=new Pptx();
-      pptx.defineLayout({name:'W16x9',width:SLIDE_W,height:SLIDE_H});
-      pptx.layout='W16x9';
-      var d=new Date();
+      var pptx = new Pptx();
+      pptx.defineLayout({name:'W16x9', width:SLIDE_W, height:SLIDE_H});
+      pptx.layout = 'W16x9';
+      pptx.title  = 'Caderno Financeiro LENVIE';
 
-      // ================= CAPA (off-white) =================
-      var t=pptx.addSlide();
-      t.background={color:BRAND.off};
-      t.addText('LENVIE',{x:0.85,y:1.55,w:11.6,h:1.1,fontFace:'Arial',fontSize:58,
-        color:BRAND.dark,bold:true,charSpacing:10});
-      t.addText('Análise Financeira'+(year?'  •  DRE '+year:''),
-        {x:0.9,y:2.78,w:11.5,h:0.5,fontFace:'Arial',fontSize:19,color:BRAND.marrom});
+      // Slides que dependem de um mês específico: gerados para cada mês selecionado
+      var perMonthSlides = ['execsum','dre_cmp','canais','estoque','eficiencia','fluxo','endivida','inadimp','criticos'];
+      // Slides "globais" / consolidados (não repetem por mês):
+      var globalSlides   = ['cover','dre_ytd','yoy','canais_q','produtos','recs'];
 
-      // KPI cards (reais quando disponíveis; senão, meta-informação)
-      var kpis=collectKpis();
-      var meta=[{lbl:'PERÍODO',val:(year||'2026')},
-                {lbl:'SEÇÕES',val:String(secs.length)},
-                {lbl:'GERADO EM',val:d.toLocaleDateString('pt-BR')}];
-      var cards=[]; for(var i=0;i<3;i++){ cards.push(kpis[i]||meta[i]); }
-      var cw=3.6, gap=0.45, cardH=1.35, startX=0.9, cardY=4.15;
-      cards.forEach(function(c,i){
-        var cx=startX+i*(cw+gap);
-        t.addShape(pptx.ShapeType.roundRect,{x:cx,y:cardY,w:cw,h:cardH,rectRadius:0.08,
-          fill:{color:BRAND.dark},line:{type:'none'},
-          shadow:{type:'outer',color:'2A2E2D',opacity:0.25,blur:6,offset:3,angle:90}});
-        t.addText(String(c.lbl).toUpperCase(),{x:cx+0.28,y:cardY+0.2,w:cw-0.56,h:0.35,
-          fontFace:'Arial',fontSize:11,color:BRAND.mono3,bold:true,charSpacing:2,valign:'middle'});
-        t.addText(String(c.val),{x:cx+0.28,y:cardY+0.55,w:cw-0.56,h:0.65,
-          fontFace:'Arial',fontSize:22,color:BRAND.amarelo,bold:true,valign:'middle'});
+      // Calcula contagem total para footer
+      var nGlobal = selSlides.filter(function(s){ return globalSlides.indexOf(s)>=0; }).length;
+      var nPerMon = selSlides.filter(function(s){ return perMonthSlides.indexOf(s)>=0; }).length;
+      var totalPages = nGlobal + nPerMon * selMonths.length;
+      var pageNum = 0;
+
+      // Detecta YTD label
+      var lastSel = selMonths[selMonths.length-1];
+      var ytdMonths = 1;
+      var kpiMonthsArr = kpiMonths();
+      // Identifica posição do último mês selecionado na lista de meses
+      var idx = kpiMonthsArr.findIndex(function(m){ return m.label === lastSel.label; });
+      ytdMonths = idx >= 0 ? (idx+1) : selMonths.length;
+      var ytdLabel = 'Jan-' + lastSel.label.split('/')[0];
+
+      // Capa (uma só, sempre)
+      if (selSlides.indexOf('cover') >= 0){
+        var refForCover = selMonths[0];
+        var rowsK = (snap()['KPIs']||[]);
+        var coverKpis = [
+          {lbl:'Receita Bruta', val:fmtBRL(kpiNum(rowsK,'Receita Bruta',refForCover.col)), hint:refForCover.label},
+          {lbl:'EBITDA',        val:fmtBRL(kpiNum(rowsK,'EBITDA',refForCover.col)),        hint:refForCover.label},
+          {lbl:'Lucro Líquido', val:fmtBRL(kpiNum(rowsK,'Lucro Líquido',refForCover.col)), hint:refForCover.label}
+        ];
+        slideCover(pptx, {
+          coverPeriod: (selMonths.length===1 ? selMonths[0].label : (selMonths[0].label+' a '+selMonths[selMonths.length-1].label)),
+          coverKpis: coverKpis
+        });
+        pageNum++; // capa não exibe número
+      }
+
+      // Para cada mês selecionado, gera os slides "por mês"
+      selMonths.forEach(function(m, mi){
+        // Divisor de mês (apenas se houver múltiplos meses)
+        if (selMonths.length > 1 && nPerMon > 0){
+          sectionDivider(pptx, m.label, 'Análise mensal');
+        }
+        var ctxM = {
+          refMonthLabel: m.label,
+          refCol: m.col,
+          ytdLabel: ytdLabel,
+          ytdMonths: ytdMonths,
+          totalPages: totalPages,
+          pageNum: 0
+        };
+        var orderM = ['execsum','dre_cmp','canais','estoque','eficiencia','fluxo','endivida','inadimp','criticos'];
+        orderM.forEach(function(sid){
+          if (selSlides.indexOf(sid) < 0) return;
+          pageNum++; ctxM.pageNum = pageNum;
+          try{
+            if (sid==='execsum')    slideExecSum(pptx, ctxM);
+            if (sid==='dre_cmp')    slideDREComparativo(pptx, ctxM);
+            if (sid==='canais')     slideCanais(pptx, ctxM);
+            if (sid==='estoque')    slideEstoque(pptx, ctxM);
+            if (sid==='eficiencia') slideEficiencia(pptx, ctxM);
+            if (sid==='fluxo')      slideFluxo(pptx, ctxM);
+            if (sid==='endivida')   slideEndividamento(pptx, ctxM);
+            if (sid==='inadimp')    slideInadimplencia(pptx, ctxM);
+            if (sid==='criticos')   slidePontosCriticos(pptx, ctxM);
+          } catch(e){ console.warn('Erro ao gerar '+sid+' para '+m.label, e); }
+        });
       });
-      t.addText('Gerado em '+d.toLocaleDateString('pt-BR'),
-        {x:0.9,y:6.75,w:11.5,h:0.4,fontFace:'Arial',fontSize:11,color:BRAND.marrom});
 
-      // ================= SEÇÕES =================
-      secs.forEach(function(id){
+      // Slides consolidados (após os mensais)
+      var orderG = ['dre_ytd','yoy','canais_q','produtos','recs'];
+      orderG.forEach(function(sid){
+        if (selSlides.indexOf(sid) < 0) return;
+        pageNum++;
+        var ctxG = {
+          refMonthLabel: lastSel.label,
+          refCol: lastSel.col,
+          ytdLabel: ytdLabel,
+          ytdMonths: ytdMonths,
+          pageNum: pageNum,
+          totalPages: totalPages
+        };
         try{
-          renderSection(id);
-          var sec=document.getElementById('tab-'+id);
-          if(!sec) return;
-          var title=labels[id]||id;
-          var tables=Array.prototype.slice.call(sec.querySelectorAll('table'));
-
-          if(tables.length){
-            tables.forEach(function(tbl,ti){
-              var rows=tableToRows(tbl,selMon,resumo);
-              if(!rows||rows.length<2) return;
-              var header=rows[0], body=rows.slice(1);
-              var aligns=columnAligns(rows);
-              // larguras: 1ª coluna larga (rótulos), demais iguais
-              var ncol=header.length;
-              var col0=Math.min(4.4,TABLE_W*0.34);
-              var rest=(ncol>1)?((TABLE_W-col0)/(ncol-1)):TABLE_W;
-              var colW=[col0]; for(var c=1;c<ncol;c++) colW.push(rest);
-
-              // paginação manual (sem autoPage): quebra o corpo em blocos
-              var pages=Math.max(1,Math.ceil(body.length/MAX_BODY));
-              for(var p=0;p<pages;p++){
-                var chunk=body.slice(p*MAX_BODY,(p+1)*MAX_BODY);
-                var sl=pptx.addSlide();
-                var ttl=title+(tables.length>1?(' ('+(ti+1)+')'):'')+(pages>1?('  ·  '+(p+1)+'/'+pages):'');
-                addHeader(sl,ttl);
-
-                // card que "abraça" a tabela (altura dinâmica)
-                var tableH=HEAD_H+chunk.length*ROW_H;
-                var cardYt=TABLE_TOP-PAD, cardHt=tableH+2*PAD;
-                if(cardYt+cardHt>SLIDE_H-0.3) cardHt=SLIDE_H-0.3-cardYt; // segurança
-                sl.addShape(pptx.ShapeType.roundRect,{x:MX-PAD,y:cardYt,w:TABLE_W+2*PAD,h:cardHt,
-                  rectRadius:0.06,fill:{color:'FBF9F2'},line:{type:'none'},
-                  shadow:{type:'outer',color:'A9A48C',opacity:0.35,blur:7,offset:3,angle:90}});
-
-                sl.addTable(styledTableRows(header,chunk,aligns),{
-                  x:MX,y:TABLE_TOP,w:TABLE_W,colW:colW,
-                  rowH:ROW_H,autoPage:false,valign:'middle',
-                  border:{type:'solid',pt:0.5,color:'E3DCCB'},
-                  margin:[2,4,2,4]});
-              }
-            });
-          } else {
-            var sl0=pptx.addSlide();
-            addHeader(sl0,title);
-            sl0.addText('Sem dados tabulares nesta seção.',
-              {x:0.5,y:3.4,w:12.3,h:0.6,fontFace:'Arial',fontSize:14,color:BRAND.marrom,align:'center'});
-          }
-
-          if(incCharts){
-            var canvases=Array.prototype.slice.call(sec.querySelectorAll('canvas'));
-            canvases.forEach(function(cv){
-              try{
-                if(cv.width<10||cv.height<10) return;
-                var img=cv.toDataURL('image/png',1.0);
-                var cs=pptx.addSlide();
-                addHeader(cs,title+' — Gráfico');
-                var ratio=cv.height/cv.width; var w=10.5; var h=w*ratio; if(h>5.4){h=5.4;w=h/ratio;}
-                cs.addImage({data:img,x:(SLIDE_W-w)/2,y:1.5,w:w,h:h});
-              }catch(e){}
-            });
-          }
-        }catch(e){ /* segue para a próxima seção */ }
+          if (sid==='dre_ytd')   slideDREYTD(pptx, ctxG);
+          if (sid==='yoy')       slideYoY(pptx, ctxG);
+          if (sid==='canais_q')  slideCanaisTrim(pptx, ctxG);
+          if (sid==='produtos')  slideProdutos(pptx, ctxG);
+          if (sid==='recs')      slideRecomendacoes(pptx, ctxG);
+        } catch(e){ console.warn('Erro ao gerar '+sid, e); }
       });
 
-      return pptx.writeFile({fileName:'Lenvie_Apresentacao_'+(year||'')+'.pptx'});
+      var fname = 'Caderno_Financeiro_LENVIE_' + (lastSel.label.replace('/','-')) + '.pptx';
+      return pptx.writeFile({fileName:fname});
     }).then(function(){
-      btn.disabled=false; btn.textContent='Gerar PPTX'; window.closePptxModal();
+      btn.disabled = false; btn.textContent = 'Gerar PPTX';
+      window.closePptxModal();
     }).catch(function(err){
-      btn.disabled=false; btn.textContent='Gerar PPTX';
-      alert((err&&err.message)?err.message:'Erro ao gerar a apresentação.');
+      console.error(err);
+      btn.disabled = false; btn.textContent = 'Gerar PPTX';
+      alert((err && err.message) ? err.message : 'Erro ao gerar a apresentação.');
     });
   };
 })();
@@ -21313,7 +22124,8 @@ window.dismissLogin = function(oEl){
     host.innerHTML=html;
   };
 
-  // Re-renderiza a aba financeira ativa após sincronizar com o Sheets (dados ao vivo)
+  // Re-renderiza a aba financeira ativa após sincronizar com o Sheets (dados ao vivo).
+  // IMPORTANTE: propaga rejeição para que o botão "Atualizar agora" mostre o erro real.
   if(typeof window.syncFromGoogleSheets==='function'){
     var _origSync = window.syncFromGoogleSheets;
     window.syncFromGoogleSheets = function(){
@@ -21324,7 +22136,11 @@ window.dismissLogin = function(oEl){
           if(act && act.id.indexOf('tab-fin-')===0){ var tid=act.id.slice(4); if(FIN_TABS[tid]) window.renderFinSheet(tid); }
         }catch(e){}
       };
-      if(ret && typeof ret.then==='function'){ ret.then(rerender, function(){}); } else { setTimeout(rerender, 600); }
+      if(ret && typeof ret.then==='function'){
+        // .then(onFulfilled).catch(onRejected) preserva a rejeição original para o chamador.
+        return ret.then(function(v){ rerender(); return v; }).catch(function(err){ rerender(); throw err; });
+      }
+      setTimeout(rerender, 600);
       return ret;
     };
   }
