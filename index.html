@@ -210,6 +210,14 @@ table.dre thead th{
   border-bottom:1px solid var(--border);font-size:12px;color:var(--muted);white-space:nowrap;z-index:5;
 }
 table.dre thead th.first{text-align:left;position:sticky;left:0;background:var(--header-bg);z-index:6;min-width:320px}
+/* Cabeçalho fixo ao rolar: o quadro da DRE ganha rolagem própria, então o
+   thead "sticky" cola no topo do quadro enquanto o corpo rola por baixo. */
+.table-wrap:has(table.dre){max-height:74vh;overflow:auto}
+/* 1ª linha do cabeçalho (Conta + meses) fixa no topo */
+table.dre thead tr:first-child th{top:0;z-index:5}
+table.dre thead tr:first-child th.first{z-index:7}
+/* 2ª linha (R$ / AV%) fixa logo abaixo da 1ª */
+table.dre thead tr:nth-child(2) th{position:sticky;top:36px;z-index:5}
 table.dre tbody td{padding:7px 8px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums}
 table.dre tbody td.first{
   text-align:left;position:sticky;left:0;background:var(--panel);z-index:3;font-weight:400;
@@ -1148,7 +1156,6 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
     <div class="nav-item" data-group="financeiro">
       <button class="nav-link">Financeiro <span class="chev">▾</span></button>
       <div class="nav-dropdown">
-        <a data-tab="fluxo-caixa"><span class="ico">💰</span>Fluxo de Caixa</a>
         <a data-tab="fin-kpis"><span class="ico">📊</span>KPIs</a>
         <a data-tab="fin-sga"><span class="ico">🧾</span>SG&A</a>
         <a data-tab="fin-cmv"><span class="ico">📦</span>CMV por Canal</a>
@@ -1221,7 +1228,6 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
   </nav>
   <div class="group-label">Financeiro</div>
   <nav class="nav">
-    <button data-tab="fluxo-caixa"><span class="ico">💰</span><span class="text">Fluxo de Caixa</span></button>
     <button data-tab="fin-kpis"><span class="ico">📊</span><span class="text">KPIs</span></button>
     <button data-tab="fin-sga"><span class="ico">🧾</span><span class="text">SG&A</span></button>
     <button data-tab="fin-cmv"><span class="ico">📦</span><span class="text">CMV por Canal</span></button>
@@ -18326,8 +18332,10 @@ function renderDRE(){
     for(let i=0;i<12;i++){
       const v = vals[i];
       const base = recBrutaVals[i];
-      const av = (v!==null && v!==undefined && base!==null && base!==undefined && base!==0)
-        ? Math.abs(v)/Math.abs(base) : null;
+      // AV vindo da planilha (análise vertical correta, ex.: EBITDA 15%); cai p/ cálculo se ausente
+      const _avSheet = (r.data && Array.isArray(r.data['av_'+key]) && r.data['av_'+key][i]!==null && r.data['av_'+key][i]!==undefined) ? Math.abs(r.data['av_'+key][i]) : null;
+      const av = (_avSheet!==null) ? _avSheet
+        : ((v!==null && v!==undefined && base!==null && base!==undefined && base!==0) ? Math.abs(v)/Math.abs(base) : null);
       bodyHtml+=`<td>${v===null||v===undefined?'<span class="muted">—</span>':fmtBRL(v)}</td>`;
       bodyHtml+=`<td style="background:rgba(46,204,113,0.04);color:#2ecc71;font-size:11px">${av===null?'<span class="muted">—</span>':fmtPct(av)}</td>`;
     }
@@ -19887,7 +19895,10 @@ function processPayload(payload){
       is_header: !!r.is_header,
       data: {
         '2026_orc':  Array.isArray(r['2026_orc'])  ? r['2026_orc']  : Array(12).fill(null),
-        '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null)
+        '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null),
+        'av_2025_real': Array.isArray(r.av2025_real) ? r.av2025_real : null,
+        'av_2026_orc':  Array.isArray(r.av2026_orc)  ? r.av2026_orc  : null,
+        'av_2026_real': Array.isArray(r.av2026_real) ? r.av2026_real : null
       }
     }));
     DRE_ECOM = { rows: dreRows, months: MONTHS };
@@ -19904,7 +19915,10 @@ function processPayload(payload){
       data: {
         '2025_real': Array.isArray(r['2025_real']) ? r['2025_real'] : Array(12).fill(null),
         '2026_orc':  Array.isArray(r['2026_orc'])  ? r['2026_orc']  : Array(12).fill(null),
-        '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null)
+        '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null),
+        'av_2025_real': Array.isArray(r.av2025_real) ? r.av2025_real : null,
+        'av_2026_orc':  Array.isArray(r.av2026_orc)  ? r.av2026_orc  : null,
+        'av_2026_real': Array.isArray(r.av2026_real) ? r.av2026_real : null
       }
     }));
     ROWS = newRows;
@@ -20113,7 +20127,10 @@ async function syncFromGoogleSheets(forceRefresh){
         is_header: !!r.is_header,
         data: {
           '2026_orc':  Array.isArray(r['2026_orc'])  ? r['2026_orc']  : Array(12).fill(null),
-          '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null)
+          '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null),
+        'av_2025_real': Array.isArray(r.av2025_real) ? r.av2025_real : null,
+        'av_2026_orc':  Array.isArray(r.av2026_orc)  ? r.av2026_orc  : null,
+        'av_2026_real': Array.isArray(r.av2026_real) ? r.av2026_real : null
         }
       }));
       DRE_ECOM = { rows: dreRows, months: MONTHS };
@@ -20131,7 +20148,10 @@ async function syncFromGoogleSheets(forceRefresh){
         data: {
           '2025_real': Array.isArray(r['2025_real']) ? r['2025_real'] : Array(12).fill(null),
           '2026_orc':  Array.isArray(r['2026_orc'])  ? r['2026_orc']  : Array(12).fill(null),
-          '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null)
+          '2026_real': Array.isArray(r['2026_real']) ? r['2026_real'] : Array(12).fill(null),
+        'av_2025_real': Array.isArray(r.av2025_real) ? r.av2025_real : null,
+        'av_2026_orc':  Array.isArray(r.av2026_orc)  ? r.av2026_orc  : null,
+        'av_2026_real': Array.isArray(r.av2026_real) ? r.av2026_real : null
         }
       }));
       ROWS = newRows;
@@ -20321,8 +20341,10 @@ function renderEcomDRE(){
     for(let i=0;i<12;i++){
       const v = vals[i];
       const base = recBrutaVals[i];
-      const av = (v!==null && v!==undefined && base!==null && base!==undefined && base!==0)
-        ? Math.abs(v)/Math.abs(base) : null;
+      // AV vindo da planilha (análise vertical correta, ex.: EBITDA 15%); cai p/ cálculo se ausente
+      const _avSheet = (r.data && Array.isArray(r.data['av_'+key]) && r.data['av_'+key][i]!==null && r.data['av_'+key][i]!==undefined) ? Math.abs(r.data['av_'+key][i]) : null;
+      const av = (_avSheet!==null) ? _avSheet
+        : ((v!==null && v!==undefined && base!==null && base!==undefined && base!==0) ? Math.abs(v)/Math.abs(base) : null);
       bodyHtml += `<td>${v===null||v===undefined?'<span class="muted">—</span>':fmtBRL(v)}</td>`;
       bodyHtml += `<td style="background:rgba(46,204,113,0.04);color:#2ecc71;font-size:11px">${av===null?'<span class="muted">—</span>':fmtPct(av)}</td>`;
     }
