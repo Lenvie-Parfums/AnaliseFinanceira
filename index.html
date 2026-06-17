@@ -2212,7 +2212,19 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
       <div class="page-sub">Consulta pública de CNPJ via API <b>publica.cnpj.ws</b>. Digite um CNPJ e obtenha um resumo executivo completo + renderização dinâmica de todo o JSON retornado.</div>
 
       <!-- Mount point do app React -->
-      <div id="cnpj-app-root" style="min-height:300px;"></div>
+      <div id="cnpj-app-root" style="min-height:300px;">
+        <div class="cnpj-card" style="margin-bottom:14px">
+          <div class="cnpj-section-title">🔎 Consultar CNPJ</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <input id="cnpj-input" class="cnpj-input" style="flex:1;min-width:220px" placeholder="00.000.000/0000-00" maxlength="18" inputmode="numeric" autocomplete="off">
+            <button id="cnpj-btn" class="cnpj-btn" type="button">Consultar</button>
+            <button id="cnpj-json-btn" class="cnpj-btn-ghost" type="button" style="display:none">📄 JSON bruto</button>
+          </div>
+          <div class="cnpj-muted" style="margin-top:8px">Consulta gratuita via API pública <code>publica.cnpj.ws</code>. Limite aproximado: 3 consultas/minuto.</div>
+          <div id="cnpj-error" class="cnpj-error" style="display:none;margin-top:12px"></div>
+        </div>
+        <div id="cnpj-result"></div>
+      </div>
 
       <!-- CSS Tailwind (CDN) escopado e overrides de tema -->
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
@@ -2265,549 +2277,165 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
           #cnpj-app-root .cnpj-input{font-size:14px;padding:11px 12px}
         }
       </style>
-
-      <!-- React + ReactDOM + Babel (Standalone para JSX em runtime) -->
-      <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-      <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-      <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-      <!-- =================== APP REACT CNPJ =================== -->
-      <script type="text/babel" data-presets="env,react">
+      <!-- =================== APP CNPJ (JS puro, sem CDN) =================== -->
+      <script>
       (function(){
-        const { useState, useEffect, useMemo, useRef, useCallback } = React;
-
-        // ---------- Utils de formatacao ----------
-        const onlyDigits = (s) => String(s||'').replace(/\D+/g,'');
-
-        function maskCNPJ(s){
-          const d = onlyDigits(s).slice(0,14);
-          let out = '';
-          if (d.length>0) out = d.substring(0,2);
-          if (d.length>=3) out += '.' + d.substring(2,5);
-          if (d.length>=6) out += '.' + d.substring(5,8);
-          if (d.length>=9) out += '/' + d.substring(8,12);
-          if (d.length>=13) out += '-' + d.substring(12,14);
-          return out;
+        var $root, inputEl, btnEl, errEl, resultEl, jsonBtnEl, lastData=null;
+        function esc(s){return String(s).replace(/[&<>"]/g,function(m){return({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]);});}
+        function humanKey(k){return String(k).replace(/_/g,' ').replace(/\b\w/g,function(c){return c.toUpperCase();});}
+        function onlyDigits(s){return String(s||'').replace(/\D/g,'');}
+        function maskCNPJ(v){
+          var d=onlyDigits(v).slice(0,14),r=d.slice(0,2);
+          if(d.length>=3)r+='.'+d.slice(2,5);
+          if(d.length>=6)r+='.'+d.slice(5,8);
+          if(d.length>=9)r+='/'+d.slice(8,12);
+          if(d.length>=13)r+='-'+d.slice(12,14);
+          return r;
         }
-        function formatCNPJ(s){
-          const d = onlyDigits(s);
-          if (d.length!==14) return s||'';
-          return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,'$1.$2.$3/$4-$5');
+        function formatCNPJ(s){var d=onlyDigits(s);return d.length===14?maskCNPJ(d):(s||'—');}
+        function formatDate(s){if(!s)return '—';var m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);return m?(m[3]+'/'+m[2]+'/'+m[1]):String(s);}
+        function formatMoney(v){var n=parseFloat(v);if(isNaN(n))return String(v);return 'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+        function formatPhone(p){var d=onlyDigits(p);if(d.length===10)return '('+d.slice(0,2)+') '+d.slice(2,6)+'-'+d.slice(6);if(d.length===11)return '('+d.slice(0,2)+') '+d.slice(2,7)+'-'+d.slice(7);return p;}
+        function formatCEP(c){var d=onlyDigits(c);return d.length===8?(d.slice(0,5)+'-'+d.slice(5)):c;}
+        function smartFormat(name,val){
+          var s=String(val);
+          if(/(^|_)data|date/i.test(name)&&/^\d{4}-\d{2}-\d{2}/.test(s))return formatDate(s);
+          if(/capital_social/i.test(name)&&!isNaN(val))return formatMoney(val);
+          if(/cep/i.test(name)&&onlyDigits(s).length===8)return formatCEP(s);
+          return s;
         }
-        function formatCPF(s){
-          const d = onlyDigits(s);
-          if (d.length!==11) return s||'';
-          return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/,'$1.$2.$3-$4');
-        }
-        function formatCEP(s){
-          const d = onlyDigits(s);
-          if (d.length!==8) return s||'';
-          return d.replace(/^(\d{5})(\d{3})$/,'$1-$2');
-        }
-        function formatPhone(s){
-          const d = onlyDigits(s);
-          if (d.length===11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/,'($1) $2-$3');
-          if (d.length===10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/,'($1) $2-$3');
-          if (d.length===9)  return d.replace(/^(\d{5})(\d{4})$/,'$1-$2');
-          if (d.length===8)  return d.replace(/^(\d{4})(\d{4})$/,'$1-$2');
-          return s||'';
-        }
-        function formatDate(s){
-          if (!s) return '';
-          // ISO yyyy-mm-dd ou yyyy-mm-ddT...
-          const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
-          if (m) return m[3]+'/'+m[2]+'/'+m[1];
-          return String(s);
-        }
-        function formatMoney(v){
-          const n = (typeof v === 'number') ? v : Number(String(v).replace(',','.'));
-          if (!isFinite(n)) return String(v);
-          return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-        }
-        function formatBool(v){ return v ? 'Sim' : 'Nao'; }
-
-        // Heuristica para formatar valor segundo o nome da chave
-        function smartFormat(key, value){
-          if (value === null || value === undefined || value === '') return '—';
-          if (typeof value === 'boolean') return formatBool(value);
-          const k = String(key||'').toLowerCase();
-
-          if (typeof value === 'string' || typeof value === 'number'){
-            const sv = String(value);
-            if (/^cnpj$/.test(k) || k.includes('cnpj')) {
-              const d = onlyDigits(sv);
-              if (d.length===14) return formatCNPJ(d);
-            }
-            if (k === 'cpf' || k.endsWith('_cpf')) {
-              const d = onlyDigits(sv);
-              if (d.length===11) return formatCPF(d);
-            }
-            if (k.includes('cep')) {
-              const d = onlyDigits(sv);
-              if (d.length===8) return formatCEP(d);
-            }
-            if (k.includes('telefone') || k.includes('ddd') && k.includes('numero') || k === 'fone' || k.includes('phone')) {
-              const d = onlyDigits(sv);
-              if (d.length>=8 && d.length<=11) return formatPhone(d);
-            }
-            if (k.includes('data') || k.endsWith('_em') || k.includes('inicio_atividade') || k.includes('atualizado')) {
-              const f = formatDate(sv);
-              if (f && f !== sv) return f;
-            }
-            if (k.includes('capital_social') || k.includes('valor') || k.includes('preco') || k.includes('saldo')) {
-              return formatMoney(value);
-            }
-          }
-          return value;
-        }
-
-        // ---------- Validacao CNPJ ----------
-        function isValidCNPJ(cnpj){
-          const c = onlyDigits(cnpj);
-          if (c.length !== 14) return false;
-          if (/^(\d)\1{13}$/.test(c)) return false;
-          const calc = (base) => {
-            let len = base.length, num = base, sum = 0, pos = len - 7;
-            for (let i = len; i >= 1; i--) {
-              sum += parseInt(num.charAt(len - i),10) * pos--;
-              if (pos < 2) pos = 9;
-            }
-            const r = sum % 11;
-            return r < 2 ? 0 : 11 - r;
-          };
-          const d1 = calc(c.substring(0,12));
-          if (d1 !== parseInt(c.charAt(12),10)) return false;
-          const d2 = calc(c.substring(0,13));
-          if (d2 !== parseInt(c.charAt(13),10)) return false;
-          return true;
-        }
-
-        // ---------- Extracao do resumo executivo ----------
-        function getDeep(obj, path){
-          try { return path.split('.').reduce((a,k)=> (a==null?a:a[k]), obj); } catch(e){ return undefined; }
-        }
-        function firstDefined(obj, paths){
-          for (const p of paths){
-            const v = getDeep(obj, p);
-            if (v !== undefined && v !== null && v !== '') return v;
-          }
-          return undefined;
-        }
+        function firstDefined(o,keys){for(var i=0;i<keys.length;i++){if(o&&o[keys[i]]!=null&&o[keys[i]]!=='')return o[keys[i]];}return null;}
         function buildSummary(data){
-          if (!data || typeof data !== 'object') return null;
-          // publica.cnpj.ws retorna em data.estabelecimento.* e data.razao_social
-          const est = data.estabelecimento || {};
-          const end = [
-            est.tipo_logradouro, est.logradouro,
-            est.numero ? ('Nº ' + est.numero) : null,
-            est.complemento || null,
-            est.bairro ? ('— ' + est.bairro) : null
-          ].filter(Boolean).join(' ');
-
-          const telefones = (est.telefone1 ? [est] : []).map(e =>
-            ([e.ddd1, e.telefone1].filter(Boolean).join(''))
-          ).concat(est.telefone2 ? [(est.ddd2||'')+est.telefone2] : []).filter(Boolean);
-
-          const ies = Array.isArray(est.inscricoes_estaduais)
-            ? est.inscricoes_estaduais.map(ie => (ie.inscricao_estadual || ie.numero || '') + (ie.estado && ie.estado.sigla ? ' / '+ie.estado.sigla : '') + (ie.ativo!==undefined?(' ('+(ie.ativo?'Ativa':'Baixada')+')') :''))
-            : [];
-
+          if(!data||typeof data!=='object')return null;
+          var est=data.estabelecimento||{};
+          var end=[est.tipo_logradouro,est.logradouro,est.numero?('Nº '+est.numero):null,est.complemento||null,est.bairro?('— '+est.bairro):null].filter(Boolean).join(' ');
+          var tels=[];
+          if(est.telefone1)tels.push((est.ddd1||'')+est.telefone1);
+          if(est.telefone2)tels.push((est.ddd2||'')+est.telefone2);
+          var ies=Array.isArray(est.inscricoes_estaduais)?est.inscricoes_estaduais.map(function(ie){return (ie.inscricao_estadual||ie.numero||'')+(ie.estado&&ie.estado.sigla?(' ('+ie.estado.sigla+')'):'');}):[];
+          var ap=est.atividade_principal||{};
           return {
-            'CNPJ': formatCNPJ(est.cnpj || data.cnpj || ''),
-            'Razao Social': firstDefined(data, ['razao_social']) || '—',
-            'Nome Fantasia': est.nome_fantasia || data.nome_fantasia || '—',
-            'Situacao Cadastral': est.situacao_cadastral || '—',
-            'Data Situacao': formatDate(est.data_situacao_cadastral || ''),
-            'Data de Abertura': formatDate(est.data_inicio_atividade || ''),
-            'Natureza Juridica': (data.natureza_juridica && (data.natureza_juridica.descricao || data.natureza_juridica.id)) || '—',
-            'Porte': (data.porte && (data.porte.descricao || data.porte.id)) || '—',
-            'Capital Social': data.capital_social ? formatMoney(data.capital_social) : '—',
-            'CNAE Principal': est.atividade_principal ? ((est.atividade_principal.subclasse||'') + ' — ' + (est.atividade_principal.descricao||'')) : '—',
-            'Telefone': telefones.length ? telefones.map(formatPhone).join(' / ') : '—',
-            'E-mail': est.email || '—',
-            'Endereco': end || '—',
-            'Cidade/UF': [est.cidade && est.cidade.nome, est.estado && est.estado.sigla].filter(Boolean).join(' / ') || '—',
-            'CEP': est.cep ? formatCEP(est.cep) : '—',
-            'Inscricoes Estaduais': ies.length ? ies.join('  •  ') : '—'
+            'CNPJ':formatCNPJ(est.cnpj||data.cnpj||''),
+            'Razão Social':firstDefined(data,['razao_social'])||'—',
+            'Nome Fantasia':est.nome_fantasia||data.nome_fantasia||'—',
+            'Situação Cadastral':est.situacao_cadastral||'—',
+            'Data Situação':formatDate(est.data_situacao_cadastral||''),
+            'Data de Abertura':formatDate(est.data_inicio_atividade||''),
+            'Natureza Jurídica':(data.natureza_juridica&&(data.natureza_juridica.descricao||data.natureza_juridica.id))||'—',
+            'Porte':(data.porte&&(data.porte.descricao||data.porte.id))||'—',
+            'Capital Social':data.capital_social?formatMoney(data.capital_social):'—',
+            'CNAE Principal':ap.descricao?((ap.subclasse||'')+' — '+ap.descricao):'—',
+            'Telefone':tels.length?tels.map(formatPhone).join(' / '):'—',
+            'E-mail':est.email||'—',
+            'Endereço':end||'—',
+            'Cidade/UF':[est.cidade&&est.cidade.nome,est.estado&&est.estado.sigla].filter(Boolean).join(' / ')||'—',
+            'CEP':est.cep?formatCEP(est.cep):'—',
+            'Inscrições Estaduais':ies.length?ies.join('  •  '):'—'
           };
         }
-
-        // ---------- Contadores ----------
-        function countStuff(node, acc){
-          acc = acc || {filled:0, empty:0, objects:0, lists:0};
-          if (Array.isArray(node)){
-            acc.lists++;
-            node.forEach(it => countStuff(it, acc));
-          } else if (node && typeof node === 'object') {
-            acc.objects++;
-            Object.keys(node).forEach(k => countStuff(node[k], acc));
-          } else {
-            if (node === null || node === undefined || node === '') acc.empty++;
-            else acc.filled++;
-          }
+        function countStuff(node,acc){
+          acc=acc||{filled:0,empty:0,objects:0,lists:0};
+          if(Array.isArray(node)){acc.lists++;node.forEach(function(it){countStuff(it,acc);});}
+          else if(node&&typeof node==='object'){acc.objects++;Object.keys(node).forEach(function(k){countStuff(node[k],acc);});}
+          else{if(node===null||node===undefined||node==='')acc.empty++;else acc.filled++;}
           return acc;
         }
-
-        // ---------- Renderer dinamico ----------
-        function humanKey(k){
-          return String(k).replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+        function renderNode(name,value,depth){
+          if(value===null||value===undefined||value==='')return '<span class="cnpj-muted">—</span>';
+          if(typeof value==='boolean')return value?'Sim':'Não';
+          if(typeof value!=='object')return esc(smartFormat(name,value));
+          if(Array.isArray(value)){
+            if(!value.length)return '<span class="cnpj-muted">(lista vazia)</span>';
+            return value.map(function(it,i){
+              if(it&&typeof it==='object')return '<details><summary>'+esc(humanKey(name))+' ['+(i+1)+']</summary><div class="cnpj-acc-body">'+renderNode(name,it,depth+1)+'</div></details>';
+              return '<div style="padding:3px 0">• '+renderNode(name,it,depth+1)+'</div>';
+            }).join('');
+          }
+          return renderObject(value,depth);
         }
-
-        function DynamicRender({ name, value, depth }){
-          depth = depth || 0;
-
-          if (value === null || value === undefined || value === '') {
-            return <span className="cnpj-muted">—</span>;
-          }
-          if (typeof value === 'boolean') return <span>{formatBool(value)}</span>;
-          if (typeof value === 'string' || typeof value === 'number') {
-            const formatted = smartFormat(name, value);
-            return <span>{String(formatted)}</span>;
-          }
-
-          // Array
-          if (Array.isArray(value)){
-            if (value.length === 0) return <span className="cnpj-muted">(lista vazia)</span>;
-            const allPrimitive = value.every(v => v===null || typeof v !== 'object');
-            if (allPrimitive){
-              return (
-                <ul style={{margin:0,paddingLeft:18}}>
-                  {value.map((v,i) => <li key={i}>{smartFormat(name, v) || '—'}</li>)}
-                </ul>
-              );
+        function renderObject(obj,depth){
+          var simple=[],complex='';
+          Object.keys(obj).forEach(function(k){
+            var v=obj[k];
+            if(v&&typeof v==='object'){
+              complex+='<details'+(depth<1?' open':'')+'><summary>'+esc(humanKey(k))+'</summary><div class="cnpj-acc-body">'+renderNode(k,v,depth+1)+'</div></details>';
+            }else{
+              simple.push('<tr><th style="width:38%">'+esc(humanKey(k))+'</th><td>'+renderNode(k,v,depth+1)+'</td></tr>');
             }
-            const allObjects = value.every(v => v && typeof v === 'object' && !Array.isArray(v));
-            if (allObjects){
-              // Tabela com colunas = uniao das chaves
-              const cols = Array.from(value.reduce((s,o)=>{ Object.keys(o).forEach(k=>s.add(k)); return s; }, new Set()));
-              return (
-                <div style={{overflowX:'auto'}}>
-                  <table className="cnpj-tbl">
-                    <thead><tr>{cols.map(c => <th key={c}>{humanKey(c)}</th>)}</tr></thead>
-                    <tbody>
-                      {value.map((row,i)=>(
-                        <tr key={i}>
-                          {cols.map(c => (
-                            <td key={c}>
-                              <DynamicRender name={c} value={row[c]} depth={depth+1} />
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            }
-            // Misto: lista de items expansiveis
-            return (
-              <div>
-                {value.map((v,i)=>(
-                  <details key={i} open={depth<1}>
-                    <summary>Item {i+1}</summary>
-                    <div className="cnpj-acc-body">
-                      <DynamicRender name={name+'_item'} value={v} depth={depth+1} />
-                    </div>
-                  </details>
-                ))}
-              </div>
-            );
-          }
-
-          // Objeto
-          if (typeof value === 'object'){
-            const entries = Object.entries(value);
-            if (entries.length === 0) return <span className="cnpj-muted">(objeto vazio)</span>;
-            // Pequenos objetos: render em grid de pares chave/valor
-            const allPrimitive = entries.every(([,v]) => v===null || (typeof v !== 'object'));
-            if (allPrimitive){
-              return (
-                <div className="cnpj-grid">
-                  {entries.map(([k,v]) => (
-                    <div key={k} className="cnpj-kpi">
-                      <div className="lbl">{humanKey(k)}</div>
-                      <div className="val"><DynamicRender name={k} value={v} depth={depth+1} /></div>
-                    </div>
-                  ))}
-                </div>
-              );
-            }
-            // Misto: cada chave vira accordion (ou inline para primitivas)
-            return (
-              <div>
-                {entries.map(([k,v]) => {
-                  const isComplex = v && typeof v === 'object';
-                  if (!isComplex){
-                    return (
-                      <div key={k} className="cnpj-kpi" style={{marginBottom:8}}>
-                        <div className="lbl">{humanKey(k)}</div>
-                        <div className="val"><DynamicRender name={k} value={v} depth={depth+1} /></div>
-                      </div>
-                    );
-                  }
-                  return (
-                    <details key={k} open={depth<1}>
-                      <summary>
-                        <span>{humanKey(k)}</span>
-                        <span className="cnpj-muted" style={{fontWeight:400,fontSize:11}}>
-                          {Array.isArray(v) ? (v.length+' item(s)') : (Object.keys(v).length+' campo(s)')}
-                        </span>
-                      </summary>
-                      <div className="cnpj-acc-body">
-                        <DynamicRender name={k} value={v} depth={depth+1} />
-                      </div>
-                    </details>
-                  );
-                })}
-              </div>
-            );
-          }
-
-          return <span>{String(value)}</span>;
+          });
+          return (simple.length?'<table class="cnpj-tbl">'+simple.join('')+'</table>':'')+complex;
         }
-
-        // ---------- Fetch com timeout ----------
-        function fetchWithTimeout(url, ms){
-          return new Promise(function(resolve, reject){
-            const ctrl = (typeof AbortController!=='undefined') ? new AbortController() : null;
-            const tid = setTimeout(()=>{
-              if (ctrl) ctrl.abort();
-              reject(new Error('timeout'));
-            }, ms);
-            fetch(url, ctrl ? {signal: ctrl.signal} : undefined)
-              .then(r => { clearTimeout(tid); resolve(r); })
-              .catch(err => { clearTimeout(tid); reject(err); });
+        function renderResult(data){
+          var s=buildSummary(data), c=countStuff(data);
+          var est=data.estabelecimento||{};
+          var sit=(est.situacao_cadastral||'OK');
+          var html='';
+          if(s){
+            html+='<div class="cnpj-card" style="margin-bottom:14px"><div class="cnpj-section-title">🏢 Resumo Executivo <span class="cnpj-chip cnpj-chip-ok" style="margin-left:8px">'+esc(sit)+'</span></div><div class="cnpj-grid">';
+            Object.keys(s).forEach(function(k){html+='<div class="cnpj-kpi"><div class="lbl">'+esc(k)+'</div><div class="val">'+esc(s[k]||'—')+'</div></div>';});
+            html+='</div></div>';
+          }
+          html+='<div class="cnpj-card" style="margin-bottom:14px"><div class="cnpj-section-title">📊 Estrutura do Retorno</div><div class="cnpj-grid-3">'
+            +'<div class="cnpj-kpi"><div class="lbl">Campos Preenchidos</div><div class="val">'+c.filled+'</div></div>'
+            +'<div class="cnpj-kpi"><div class="lbl">Campos Vazios</div><div class="val">'+c.empty+'</div></div>'
+            +'<div class="cnpj-kpi"><div class="lbl">Objetos Encontrados</div><div class="val">'+c.objects+'</div></div>'
+            +'<div class="cnpj-kpi"><div class="lbl">Listas Encontradas</div><div class="val">'+c.lists+'</div></div>'
+            +'</div></div>';
+          html+='<div class="cnpj-card"><div class="cnpj-section-title">🧬 Renderização Dinâmica do JSON</div><div class="cnpj-muted" style="margin-bottom:12px">Todos os campos retornados pela API, formatados automaticamente.</div>'+renderObject(data,0)+'</div>';
+          resultEl.innerHTML=html;
+        }
+        function showJsonModal(){
+          if(!lastData)return;
+          var back=document.createElement('div');back.className='cnpj-modal-back';
+          back.innerHTML='<div class="cnpj-modal"><div class="cnpj-modal-head"><div class="cnpj-section-title" style="margin:0">📄 JSON Bruto</div><div style="display:flex;gap:8px"><button class="cnpj-btn-ghost" id="cnpj-copy">Copiar</button><button class="cnpj-btn-ghost" id="cnpj-close">Fechar</button></div></div><div class="cnpj-modal-body"><pre class="cnpj-json">'+esc(JSON.stringify(lastData,null,2))+'</pre></div></div>';
+          back.addEventListener('click',function(e){if(e.target.classList.contains('cnpj-modal-back'))document.body.contains(back)&&$root.removeChild(back);});
+          $root.appendChild(back);
+          back.querySelector('#cnpj-close').onclick=function(){$root.removeChild(back);};
+          back.querySelector('#cnpj-copy').onclick=function(){
+            var txt=JSON.stringify(lastData,null,2);
+            if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(txt).then(function(){this.textContent='Copiado!';}.bind(this));}
+            else{var ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(_){}document.body.removeChild(ta);}
+          };
+        }
+        function fetchWithTimeout(url,ms){
+          return new Promise(function(resolve,reject){
+            var ctrl=window.AbortController?new AbortController():null;
+            var t=setTimeout(function(){if(ctrl)try{ctrl.abort();}catch(_){}reject(new Error('timeout'));},ms);
+            fetch(url,ctrl?{signal:ctrl.signal}:{}).then(function(r){clearTimeout(t);resolve(r);}).catch(function(e){clearTimeout(t);reject(e);});
           });
         }
-
-        // ---------- Componente principal ----------
-        function CNPJApp(){
-          const [input, setInput] = useState('');
-          const [loading, setLoading] = useState(false);
-          const [error, setError] = useState(null);
-          const [data, setData] = useState(null);
-          const [showJson, setShowJson] = useState(false);
-          const [copied, setCopied] = useState(false);
-          const inputRef = useRef(null);
-
-          const cleanCnpj = useMemo(() => onlyDigits(input), [input]);
-          const valid = useMemo(() => isValidCNPJ(cleanCnpj), [cleanCnpj]);
-
-          const summary = useMemo(() => data ? buildSummary(data) : null, [data]);
-          const counters = useMemo(() => data ? countStuff(data) : null, [data]);
-
-          const onChange = (e) => setInput(maskCNPJ(e.target.value));
-
-          const onSearch = useCallback(async () => {
-            setError(null); setData(null);
-            if (cleanCnpj.length === 0){
-              setError('Digite um CNPJ para consultar.');
-              return;
-            }
-            if (!valid){
-              setError('CNPJ invalido. Verifique os digitos e tente novamente.');
-              return;
-            }
-            setLoading(true);
-            try{
-              const url = 'https://publica.cnpj.ws/cnpj/' + cleanCnpj;
-              const resp = await fetchWithTimeout(url, 15000);
-              if (resp.status === 404){
-                throw new Error('CNPJ nao encontrado na base publica.');
-              }
-              if (resp.status === 429){
-                throw new Error('Muitas consultas em pouco tempo (limite da API). Aguarde alguns segundos e tente novamente.');
-              }
-              if (!resp.ok){
-                throw new Error('Falha na consulta (HTTP ' + resp.status + ').');
-              }
-              const json = await resp.json();
-              setData(json);
-            } catch(err){
-              if (err && err.message === 'timeout'){
-                setError('Tempo de resposta excedido. Verifique sua conexao e tente novamente.');
-              } else if (err && /Failed to fetch|NetworkError|TypeError/i.test(err.message||'')){
-                setError('Erro de rede. Verifique sua conexao com a internet.');
-              } else {
-                setError(err && err.message ? err.message : 'Erro inesperado na consulta.');
-              }
-            } finally {
-              setLoading(false);
-            }
-          }, [cleanCnpj, valid]);
-
-          const onKeyDown = (e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              onSearch();
-            }
-          };
-
-          const copyJson = async () => {
-            try{
-              await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-              setCopied(true);
-              setTimeout(()=> setCopied(false), 1800);
-            } catch(e){
-              // fallback
-              const ta = document.createElement('textarea');
-              ta.value = JSON.stringify(data, null, 2);
-              document.body.appendChild(ta); ta.select();
-              try { document.execCommand('copy'); setCopied(true); setTimeout(()=>setCopied(false),1800); } catch(_){}
-              document.body.removeChild(ta);
-            }
-          };
-
-          // Status chip do CNPJ digitado
-          let chipEl = null;
-          if (cleanCnpj.length === 14){
-            chipEl = valid
-              ? <span className="cnpj-chip cnpj-chip-ok">● Valido</span>
-              : <span className="cnpj-chip cnpj-chip-bad">● Invalido</span>;
-          } else if (cleanCnpj.length > 0){
-            chipEl = <span className="cnpj-chip cnpj-chip-neutral">{cleanCnpj.length}/14 digitos</span>;
-          }
-
-          return (
-            <div style={{display:'flex',flexDirection:'column',gap:16}}>
-              {/* ===== Caixa de consulta ===== */}
-              <div className="cnpj-card">
-                <div className="cnpj-section-title">📥 Nova Consulta</div>
-                <div className="cnpj-muted" style={{marginBottom:14}}>
-                  Consulta gratuita via API publica <code>publica.cnpj.ws</code>. Limite aproximado: 3 consultas/minuto.
-                </div>
-                <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center'}}>
-                  <div style={{flex:'1 1 280px',minWidth:240}}>
-                    <input
-                      ref={inputRef}
-                      className="cnpj-input"
-                      type="text"
-                      placeholder="00.000.000/0000-00"
-                      value={input}
-                      onChange={onChange}
-                      onKeyDown={onKeyDown}
-                      maxLength={18}
-                      autoComplete="off"
-                      inputMode="numeric"
-                    />
-                  </div>
-                  <button className="cnpj-btn" onClick={onSearch} disabled={loading}>
-                    {loading ? (<><span className="cnpj-spinner"></span> &nbsp;Consultando...</>) : 'Consultar'}
-                  </button>
-                  {data && (
-                    <button className="cnpj-btn-ghost" onClick={()=>setShowJson(true)}>
-                      Ver JSON Bruto
-                    </button>
-                  )}
-                  <div style={{marginLeft:'auto'}}>{chipEl}</div>
-                </div>
-                {error && (
-                  <div className="cnpj-error" style={{marginTop:12}}>
-                    <b>Erro:</b> {error}
-                  </div>
-                )}
-              </div>
-
-              {/* ===== Resumo executivo ===== */}
-              {data && summary && (
-                <div className="cnpj-card">
-                  <div className="cnpj-section-title">
-                    🏢 Resumo Executivo
-                    <span className="cnpj-chip cnpj-chip-ok" style={{marginLeft:8}}>
-                      {(data.estabelecimento && data.estabelecimento.situacao_cadastral) || 'OK'}
-                    </span>
-                  </div>
-                  <div className="cnpj-grid">
-                    {Object.entries(summary).map(([k,v]) => (
-                      <div className="cnpj-kpi" key={k}>
-                        <div className="lbl">{k}</div>
-                        <div className="val">{v || '—'}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ===== Contadores ===== */}
-              {data && counters && (
-                <div className="cnpj-card">
-                  <div className="cnpj-section-title">📊 Estrutura do Retorno</div>
-                  <div className="cnpj-grid-3">
-                    <div className="cnpj-kpi"><div className="lbl">Campos Preenchidos</div><div className="val">{counters.filled}</div></div>
-                    <div className="cnpj-kpi"><div className="lbl">Campos Vazios</div><div className="val">{counters.empty}</div></div>
-                    <div className="cnpj-kpi"><div className="lbl">Objetos Encontrados</div><div className="val">{counters.objects}</div></div>
-                    <div className="cnpj-kpi"><div className="lbl">Listas Encontradas</div><div className="val">{counters.lists}</div></div>
-                  </div>
-                </div>
-              )}
-
-              {/* ===== Renderizacao dinamica completa ===== */}
-              {data && (
-                <div className="cnpj-card">
-                  <div className="cnpj-section-title">🧬 Renderizacao Dinamica do JSON</div>
-                  <div className="cnpj-muted" style={{marginBottom:12}}>
-                    Todos os campos retornados pela API, formatados automaticamente. Objetos e listas podem ser expandidos.
-                  </div>
-                  <DynamicRender name="root" value={data} depth={0} />
-                </div>
-              )}
-
-              {/* Modal JSON Bruto */}
-              {showJson && data && (
-                <div className="cnpj-modal-back" onClick={(e)=>{ if(e.target.classList.contains('cnpj-modal-back')) setShowJson(false); }}>
-                  <div className="cnpj-modal">
-                    <div className="cnpj-modal-head">
-                      <div className="cnpj-section-title" style={{margin:0}}>📄 JSON Bruto</div>
-                      <div style={{display:'flex',gap:8}}>
-                        <button className="cnpj-btn-ghost" onClick={copyJson}>{copied ? '✔ Copiado' : 'Copiar JSON'}</button>
-                        <button className="cnpj-btn-ghost" onClick={()=>setShowJson(false)}>Fechar</button>
-                      </div>
-                    </div>
-                    <div className="cnpj-modal-body">
-                      <pre className="cnpj-json">{JSON.stringify(data, null, 2)}</pre>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Estado inicial / dica */}
-              {!data && !loading && !error && (
-                <div className="cnpj-info">
-                  💡 Dica: digite um CNPJ valido e pressione <b>Enter</b> ou clique em <b>Consultar</b>.
-                  Exemplos para teste: <code>00.000.000/0001-91</code> (Banco do Brasil) ou <code>33.000.167/0001-01</code> (Petrobras).
-                </div>
-              )}
-            </div>
-          );
+        function setError(msg){if(msg){errEl.textContent=msg;errEl.style.display='block';}else{errEl.style.display='none';errEl.textContent='';}}
+        function onSearch(){
+          setError(null);resultEl.innerHTML='';jsonBtnEl.style.display='none';
+          var clean=onlyDigits(inputEl.value);
+          if(!clean){setError('Digite um CNPJ para consultar.');return;}
+          if(clean.length!==14){setError('CNPJ inválido. Verifique os dígitos e tente novamente.');return;}
+          btnEl.disabled=true;btnEl.innerHTML='<span class="cnpj-spinner"></span> Consultando...';
+          fetchWithTimeout('https://publica.cnpj.ws/cnpj/'+clean,15000).then(function(resp){
+            if(resp.status===404)throw new Error('CNPJ não encontrado na base pública.');
+            if(resp.status===429)throw new Error('Muitas consultas em pouco tempo (limite da API). Aguarde alguns segundos e tente novamente.');
+            if(!resp.ok)throw new Error('Falha na consulta (HTTP '+resp.status+').');
+            return resp.json();
+          }).then(function(json){lastData=json;renderResult(json);jsonBtnEl.style.display='';}).catch(function(err){
+            var m=(err&&err.message)||'';
+            if(m==='timeout')setError('Tempo de resposta excedido. Verifique sua conexão e tente novamente.');
+            else if(/Failed to fetch|NetworkError|TypeError/i.test(m))setError('Erro de rede. Verifique sua conexão com a internet.');
+            else setError(m||'Erro inesperado na consulta.');
+          }).then(function(){btnEl.disabled=false;btnEl.textContent='Consultar';});
         }
-
-        // Mount lazy: so monta quando a tab CNPJ ficar visivel pela primeira vez
-        let mounted = false;
-        function mountCNPJ(){
-          if (mounted) return;
-          const el = document.getElementById('cnpj-app-root');
-          if (!el) return;
-          mounted = true;
-          const root = ReactDOM.createRoot(el);
-          root.render(<CNPJApp />);
+        function init(){
+          $root=document.getElementById('cnpj-app-root');if(!$root)return;
+          inputEl=document.getElementById('cnpj-input');btnEl=document.getElementById('cnpj-btn');
+          errEl=document.getElementById('cnpj-error');resultEl=document.getElementById('cnpj-result');
+          jsonBtnEl=document.getElementById('cnpj-json-btn');
+          if(!inputEl||inputEl.__wired)return;inputEl.__wired=true;
+          inputEl.addEventListener('input',function(){var p=inputEl.selectionStart;inputEl.value=maskCNPJ(inputEl.value);});
+          inputEl.addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();onSearch();}});
+          btnEl.addEventListener('click',onSearch);
+          jsonBtnEl.addEventListener('click',showJsonModal);
         }
-        // Hook na ativacao da tab
-        window.__mountCNPJ = mountCNPJ;
-
-        // Se a tab ja estiver aberta no load, monta imediatamente
-        document.addEventListener('DOMContentLoaded', function(){
-          const tab = document.getElementById('tab-cnpj');
-          if (tab && tab.classList.contains('active')) mountCNPJ();
-        });
-        // Observa mudanca de classe (caso DOMContentLoaded ja tenha passado)
-        try{
-          const tab = document.getElementById('tab-cnpj');
-          if (tab){
-            const obs = new MutationObserver(()=>{ if (tab.classList.contains('active')) mountCNPJ(); });
-            obs.observe(tab, {attributes:true, attributeFilter:['class']});
-            if (tab.classList.contains('active')) mountCNPJ();
-          }
-        }catch(e){ /* noop */ }
+        if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+        window.__initCNPJ=init;
       })();
       </script>
     </section>
@@ -2816,6 +2444,7 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
   </main>
 </div>
 
+<script>window.__RANKING_SNAPSHOT__={"produtos":{"2025":{"Atacado / Representantes":{"0":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1731.8,"pedidos":1732},{"rank":2,"produto":"AGUA PERF PATCHOULI 500ML","fat":51630.72,"pedidos":1404},{"rank":3,"produto":"AGUA PERF INTO 500ML","fat":48064.94,"pedidos":1296},{"rank":4,"produto":"AGUA PERF MAGNOLIA 500ML","fat":45821.3,"pedidos":1252},{"rank":5,"produto":"AGUA PERF FIGO 500ML","fat":37854.57,"pedidos":1028},{"rank":6,"produto":"AGUA PERF ALECRIM 500ML","fat":36536.69,"pedidos":996},{"rank":7,"produto":"DIF DE PERF PATCHOULI 200ML","fat":69448.96,"pedidos":964},{"rank":8,"produto":"DIF DE PERF FIGO 200ML","fat":69224.91,"pedidos":960},{"rank":9,"produto":"REF DIF PERF INTO 250ML","fat":45021.62,"pedidos":936},{"rank":10,"produto":"DIF DE PERF MAGNOLIA 200ML","fat":66651.78,"pedidos":926}],"1":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1809.13,"pedidos":1809},{"rank":2,"produto":"AGUA PERF PATCHOULI 500ML","fat":45466.99,"pedidos":1188},{"rank":3,"produto":"AGUA PERF INTO 500ML","fat":45535.33,"pedidos":1186},{"rank":4,"produto":"CREME DE MAO TERRA DO SOL 40G","fat":25486.78,"pedidos":1096},{"rank":5,"produto":"AGUA PERF MAGNOLIA 500ML","fat":40973.54,"pedidos":1072},{"rank":6,"produto":"AGUA PERF FLOR 500ML","fat":34770.19,"pedidos":920},{"rank":7,"produto":"AGUA PERF ALECRIM 500ML","fat":34302.74,"pedidos":905},{"rank":8,"produto":"DIF DE PERF PATCHOULI 200ML","fat":67048.09,"pedidos":896},{"rank":9,"produto":"DIFUSOR ELETRICO LENVIE","fat":48750.68,"pedidos":891},{"rank":10,"produto":"AGUA PERF TERRA DO SOL 500ML","fat":33315.6,"pedidos":788}],"2":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1608.75,"pedidos":1609},{"rank":2,"produto":"AGUA PERF INTO 500ML","fat":51955.76,"pedidos":1340},{"rank":3,"produto":"AGUA PERF PATCHOULI 500ML","fat":47984.38,"pedidos":1248},{"rank":4,"produto":"AGUA PERF MAGNOLIA 500ML","fat":38007.81,"pedidos":992},{"rank":5,"produto":"REF DIF PERF PATCHOULI 200ML","fat":43223.14,"pedidos":946},{"rank":6,"produto":"DIF DE PERF PATCHOULI 200ML","fat":67211.84,"pedidos":888},{"rank":7,"produto":"AGUA PERF FLOR 500ML","fat":33194.19,"pedidos":864},{"rank":8,"produto":"DIF DE PERF INTO 250ML","fat":70092.02,"pedidos":846},{"rank":9,"produto":"DIF DE PERF ALECRIM 200ML","fat":61616.85,"pedidos":816},{"rank":10,"produto":"AGUA PERF ALECRIM 500ML","fat":31089.92,"pedidos":804}],"3":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1948.0,"pedidos":1946},{"rank":2,"produto":"AGUA PERF FIGO 500ML","fat":40018.77,"pedidos":1710},{"rank":3,"produto":"AGUA PERF PATCHOULI 500ML","fat":59743.2,"pedidos":1680},{"rank":4,"produto":"REF DIF PERF MANDARINA 200ML","fat":52821.11,"pedidos":1478},{"rank":5,"produto":"AGUA PERF MAGNOLIA 500ML","fat":55810.82,"pedidos":1432},{"rank":6,"produto":"AGUA PERF MANDARINA 500ML","fat":41802.56,"pedidos":1242},{"rank":7,"produto":"AGUA PERF INTO 500ML","fat":48467.88,"pedidos":1232},{"rank":8,"produto":"KIT AGUA PERF MIX 3 UN 200ML","fat":88378.43,"pedidos":1060},{"rank":9,"produto":"OLEO CONC PATCHOULI 20ML","fat":22694.31,"pedidos":1031},{"rank":10,"produto":"REF DIF PERF PATCHOULI 200ML","fat":46929.88,"pedidos":1024}],"4":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":52626.0,"pedidos":96018},{"rank":2,"produto":"VARETA DE RATTAN 3X25CM","fat":8400.0,"pedidos":40000},{"rank":3,"produto":"VARETA DE FIBRA BRANCA 4X25CM","fat":1750.0,"pedidos":7000},{"rank":4,"produto":"CARTAO AGRADECIMENTO LENVIE 90X90MM COUCHE 300GR FOSCO","fat":2340.0,"pedidos":6000},{"rank":5,"produto":"SACO PLASTICO BOLHA S/ ABA 16x23 (LXC) 142 MICRAS - PARA VELA DE 170G LENVIE","fat":2750.0,"pedidos":5500},{"rank":6,"produto":"CAIXA EXPEDICAO TAMANHO M PARDA - 208 x 152 x 260MM DCSS-B SZ","fat":12636.0,"pedidos":4050},{"rank":7,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":909.44,"pedidos":4000},{"rank":8,"produto":"CAIXA EXPEDICAO TAMANHO G PARDA - 250 x 150 x 360MM DCSS-B SZ","fat":13267.5,"pedidos":3050},{"rank":9,"produto":"CAIXA DE EMBARQUE PADRAO 01 40X30X30 (BC - onda dupla)","fat":13358.38,"pedidos":2107},{"rank":10,"produto":"CREME DE MAO TERRA DO SOL 40G","fat":18040.81,"pedidos":1851}],"5":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":8400.0,"pedidos":40000},{"rank":2,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":2168.14,"pedidos":7000},{"rank":3,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":909.44,"pedidos":4000},{"rank":4,"produto":"REF DIF PERF MANDARINA 200ML","fat":83489.3,"pedidos":2233},{"rank":5,"produto":"AGUA PERF PATCHOULI 500ML","fat":18067.7,"pedidos":1855},{"rank":6,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1677.0,"pedidos":1677},{"rank":7,"produto":"AGUA PERF INTO 500ML","fat":7707.07,"pedidos":1606},{"rank":8,"produto":"CAIXA DE EMBARQUE PADRAO 01 40X30X30 (BC - onda dupla)","fat":10067.92,"pedidos":1588},{"rank":9,"produto":"OLEO CONC PATCHOULI 20ML","fat":10661.81,"pedidos":1564},{"rank":10,"produto":"CONJUNTO DE DIVISORIA P/ 20 PECAS","fat":6396.0,"pedidos":1560}],"6":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":128081.0,"pedidos":128081},{"rank":2,"produto":"VARETA DE RATTAN 3X25CM","fat":8400.0,"pedidos":40000},{"rank":3,"produto":"POTE VELA 190GR BOCA 72 DECORADO - NOVA URBAN","fat":34574.4,"pedidos":10080},{"rank":4,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":2168.14,"pedidos":7000},{"rank":5,"produto":"FRASCO DUBLIN R28/410 200ML - DECORADO ARABESC GENERICO","fat":14784.0,"pedidos":6720},{"rank":6,"produto":"SACO PLASTICO BOLHA S/ ABA 16x23 (LXC) 142 MICRAS - PARA VELA DE 170G LENVIE","fat":1675.0,"pedidos":3350},{"rank":7,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":682.08,"pedidos":3000},{"rank":8,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":682.08,"pedidos":3000},{"rank":9,"produto":"AGUA PERF PATCHOULI 500ML","fat":18860.68,"pedidos":2284},{"rank":10,"produto":"AGUA PERF INTO 500ML","fat":21006.06,"pedidos":2166}],"7":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":6977.46,"pedidos":33226},{"rank":2,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":1591.52,"pedidos":7000},{"rank":3,"produto":"SACO PLASTICO BOLHA S/ ABA 20X20 (LXC) 80 MICRAS - PARA VELA DE 210G LENVIE","fat":1591.52,"pedidos":7000},{"rank":4,"produto":"SACO PLASTICO BOLHA S/ ABA 16x23 (LXC) 142 MICRAS - PARA VELA DE 170G LENVIE","fat":1500.0,"pedidos":3000},{"rank":5,"produto":"CAIXA EXPEDICAO TAMANHO M PARDA - 208 x 152 x 260MM DCSS-B SZ","fat":7144.8,"pedidos":2290},{"rank":6,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":13488.0,"pedidos":2288},{"rank":7,"produto":"REF DIF PERF PATCHOULI 200ML","fat":23863.0,"pedidos":1400},{"rank":8,"produto":"CONJUNTO DE DIVISORIA P/ 20 PECAS","fat":5535.0,"pedidos":1350},{"rank":9,"produto":"REF DIF PERF INTO 250ML","fat":26165.11,"pedidos":1135},{"rank":10,"produto":"SAB BARRA PATBO VANILLA BLOOM 150G","fat":9298.73,"pedidos":1120}],"8":[{"rank":1,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":19141.56,"pedidos":61800},{"rank":2,"produto":"VARETA DE FIBRA BRANCA 4X25CM","fat":6917.5,"pedidos":27670},{"rank":3,"produto":"VARETA DE RATTAN 3X25CM","fat":2100.0,"pedidos":10000},{"rank":4,"produto":"CAIXA EXPEDICAO TAMANHO M PARDA - 208 x 152 x 260MM DCSS-B SZ","fat":5772.0,"pedidos":1850},{"rank":5,"produto":"SACOLA LENVIE PEQUENA","fat":6072.73,"pedidos":1120},{"rank":6,"produto":"SAB BARRA FIGO 150G","fat":7154.98,"pedidos":985},{"rank":7,"produto":"OLEO CONC PESSEGO 20ML","fat":5774.67,"pedidos":816},{"rank":8,"produto":"AGUA PERF INTO 500ML","fat":8067.04,"pedidos":803},{"rank":9,"produto":"REF DIF PERF FIGO 200ML","fat":25450.5,"pedidos":736},{"rank":10,"produto":"CREME DE MAO TERRA DO SOL 40G","fat":10117.55,"pedidos":635}],"9":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":9116.52,"pedidos":43412},{"rank":2,"produto":"VARETA DE FIBRA BRANCA 4X25CM","fat":1796.0,"pedidos":7200},{"rank":3,"produto":"VARETA DE FIBRA BRANCA 4X25CM","fat":1796.0,"pedidos":7200},{"rank":4,"produto":"FITA OLFATIVA RETA LENVIE 78X20MM - FITA UNITARIA","fat":1092.0,"pedidos":6000},{"rank":5,"produto":"CAIXA BRANCA DE SITE M 208X152X260MM","fat":13017.75,"pedidos":3063},{"rank":6,"produto":"CAIXA BRANCA DE SITE G 208X152X340MM","fat":14066.25,"pedidos":3025},{"rank":7,"produto":"CAIXA BRANCA DE SITE P (AVIAO) 190X155X140MM","fat":14746.0,"pedidos":2525},{"rank":8,"produto":"AGUA PERF INTO 500ML","fat":17480.99,"pedidos":1743},{"rank":9,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":9649.0,"pedidos":1649},{"rank":10,"produto":"REF DIF PERF PATCHOULI 200ML","fat":27844.12,"pedidos":1599}],"10":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":5460.0,"pedidos":26000},{"rank":2,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":4200.0,"pedidos":14000},{"rank":3,"produto":"AGUA PERF BAUNILHA AMBAR CAMICADO 1L","fat":59556.0,"pedidos":4200},{"rank":4,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":86083.02,"pedidos":4002},{"rank":5,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":23678.0,"pedidos":3978},{"rank":6,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":87959.52,"pedidos":3702},{"rank":7,"produto":"REF DIF PERF PATCHOULI 200ML","fat":44720.51,"pedidos":2262},{"rank":8,"produto":"AGUA PERF PATCHOULI 500ML","fat":21704.58,"pedidos":2091},{"rank":9,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":38476.8,"pedidos":2004},{"rank":10,"produto":"DIF DE PERF PATCHOULI 200ML","fat":68138.84,"pedidos":1842}],"11":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":10920.0,"pedidos":52000},{"rank":2,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":2100.0,"pedidos":7000},{"rank":3,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":2100.0,"pedidos":7000},{"rank":4,"produto":"SACO PLASTICO BOLHA S/ ABA 16x23 (LXC) 142 MICRAS - PARA VELA DE 170G LENVIE","fat":1500.0,"pedidos":3000},{"rank":5,"produto":"AGUA PERF MAGNOLIA 500ML","fat":37461.32,"pedidos":2849},{"rank":6,"produto":"VELA PERF PATCHOULI 210G","fat":83048.16,"pedidos":2272},{"rank":7,"produto":"AGUA PERF PATCHOULI 500ML","fat":22473.88,"pedidos":2178},{"rank":8,"produto":"DIF DE PERF MAGNOLIA 200ML","fat":48899.84,"pedidos":2024},{"rank":9,"produto":"REF DIF PERF PATCHOULI 200ML","fat":32065.02,"pedidos":1846},{"rank":10,"produto":"AGUA PERF ALECRIM 500ML","fat":18566.77,"pedidos":1765}]},"Ecommerce":{"1":[{"rank":1,"produto":"AGUA PERFUMADA MAGNOLIA PACIFICA ARABESC - 1L","fat":879.48,"pedidos":9},{"rank":2,"produto":"DIFUSOR DE PERFUME FIGO AMBARADO ARABESC - 200ML","fat":182.73,"pedidos":3},{"rank":3,"produto":"DIFUSOR DE PERFUME FIGO AMBARADO ARABESC - 200ML","fat":182.73,"pedidos":3},{"rank":4,"produto":"DIFUSOR DE PERFUME FIGO AMBARADO ARABESC - 200ML","fat":182.73,"pedidos":3},{"rank":5,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2},{"rank":6,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2},{"rank":7,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2},{"rank":8,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2},{"rank":9,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2},{"rank":10,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":86.08,"pedidos":2}],"2":[{"rank":1,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":428.26,"pedidos":5},{"rank":2,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":428.26,"pedidos":5},{"rank":3,"produto":"AGUA PERFUMADA TERRA DO SOL LENVIE+AGUA DE COCO - 500ML","fat":342.49,"pedidos":4},{"rank":4,"produto":"AGUA PERFUMADA TERRA DO SOL LENVIE+AGUA DE COCO - 500ML","fat":342.49,"pedidos":4},{"rank":5,"produto":"REFIL DIFUSOR DE PERFUME CITRUS VERBENA ARABESC - 200ML","fat":288.3,"pedidos":3},{"rank":6,"produto":"REFIL DIFUSOR DE PERFUME CITRUS VERBENA ARABESC - 200ML","fat":288.3,"pedidos":3},{"rank":7,"produto":"REFIL DIFUSOR DE PERFUME CITRUS VERBENA ARABESC - 200ML","fat":288.3,"pedidos":3},{"rank":8,"produto":"AGUA PERFUMADA CITRUS VERBENA ARABESC - 500ML","fat":147.45,"pedidos":2},{"rank":9,"produto":"AGUA PERFUMADA CITRUS VERBENA ARABESC - 500ML","fat":147.45,"pedidos":2},{"rank":10,"produto":"AGUA PERFUMADA CITRUS VERBENA ARABESC - 500ML","fat":147.45,"pedidos":2}],"3":[{"rank":1,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 1L","fat":15270.15,"pedidos":158},{"rank":2,"produto":"REFIL DIFUSOR DE PERFUME PATCHOULI VANILLA - 200ML","fat":11721.17,"pedidos":126},{"rank":3,"produto":"REFIL DIFUSOR DE PERFUME MANDARINA CEYLON - 200ML","fat":11224.59,"pedidos":116},{"rank":4,"produto":"SACOLA LENVIE PEQUENA","fat":507.1,"pedidos":110},{"rank":5,"produto":"REFIL DIFUSOR DE PERFUME FIGO AMBARADO - 200ML","fat":9709.9,"pedidos":102},{"rank":6,"produto":"OLEO CONC PATCHOULI 20ML","fat":6051.16,"pedidos":93},{"rank":7,"produto":"REFIL DIFUSOR DE PERFUME INTO THE NIGHT - 250ML","fat":8886.38,"pedidos":85},{"rank":8,"produto":"DIFUSOR DE PERFUME PATCHOULI VANILLA ARABESC - 200ML","fat":12981.36,"pedidos":80},{"rank":9,"produto":"SACOLA LENVIE MEDIA","fat":494.1,"pedidos":76},{"rank":10,"produto":"DISCOVERY SET PERFUMES DE USO PESSOAL - 1,8ML","fat":6028.17,"pedidos":75}],"4":[{"rank":1,"produto":"SACOLA LENVIE PEQUENA","fat":841.55,"pedidos":241},{"rank":2,"produto":"AGUA PERF PESSEGO 200ML","fat":877.63,"pedidos":170},{"rank":3,"produto":"VELA PERF FIGO 170G","fat":3421.5,"pedidos":150},{"rank":4,"produto":"DIF DE PERF PESSEGO 200ML","fat":2000.37,"pedidos":44},{"rank":5,"produto":"VELA PERF FLOR 210G","fat":1151.25,"pedidos":43},{"rank":6,"produto":"SAB LIQ PESSEGO 200ML","fat":1177.26,"pedidos":42},{"rank":7,"produto":"SACOLA LENVIE MEDIA","fat":131.33,"pedidos":36},{"rank":8,"produto":"HOME SPRAY PESSEGO 200ML","fat":624.68,"pedidos":24},{"rank":9,"produto":"VELA PERF TABACO & VANILLA 190G","fat":458.24,"pedidos":19},{"rank":10,"produto":"DIF DE PERF MATCHA & HINOKI 220ML","fat":550.03,"pedidos":17}],"5":[{"rank":1,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 500ML","fat":3671.25,"pedidos":300},{"rank":2,"produto":"AGUA PERFUMADA FIGO AMBARADO ARABESC - 500ML","fat":2288.92,"pedidos":189},{"rank":3,"produto":"AGUA PERF ALECRIM 200ML","fat":1006.69,"pedidos":150},{"rank":4,"produto":"SACOLA LENVIE PEQUENA","fat":444.66,"pedidos":126},{"rank":5,"produto":"VELA PERF PESSEGO 210G","fat":1627.8,"pedidos":50},{"rank":6,"produto":"VELA PERF PESSEGO 210G","fat":1627.8,"pedidos":50},{"rank":7,"produto":"VELA PERF PESSEGO 210G","fat":1627.8,"pedidos":50},{"rank":8,"produto":"SACOLA LENVIE MEDIA","fat":260.06,"pedidos":49},{"rank":9,"produto":"REFIL DIFUSOR DE PERFUME SUNSET ROSE ELEMENTOS - 250ML","fat":923.48,"pedidos":47},{"rank":10,"produto":"VELA PERF LATA INTO 250G","fat":1302.0,"pedidos":35}],"6":[{"rank":1,"produto":"HOME SPRAY MAMY CARNEIRINHO - 250ML","fat":202.02,"pedidos":14},{"rank":2,"produto":"SACOLA LENVIE MEDIA","fat":48.06,"pedidos":9},{"rank":3,"produto":"DISCOVERY DE USO PESSOAL 10X1,8ML","fat":166.61,"pedidos":5},{"rank":4,"produto":"DISCOVERY DE USO PESSOAL 10X1,8ML","fat":166.61,"pedidos":5},{"rank":5,"produto":"DISCOVERY PARA CASA 16X1,8ML","fat":127.54,"pedidos":3},{"rank":6,"produto":"DISCOVERY PARA CASA 16X1,8ML","fat":127.54,"pedidos":3},{"rank":7,"produto":"VELA PERF LATA MAGNOLIA 250G","fat":73.28,"pedidos":2},{"rank":8,"produto":"VELA PERF LATA MAGNOLIA 250G","fat":73.28,"pedidos":2},{"rank":9,"produto":"VELA PERF LATA MAGNOLIA 250G","fat":73.28,"pedidos":2},{"rank":10,"produto":"VELA PERF LATA MAGNOLIA 250G","fat":73.28,"pedidos":2}],"7":[{"rank":1,"produto":"HOME SPRAY VERMELHO MASP 100ML","fat":2643.06,"pedidos":87},{"rank":2,"produto":"SACOLA LENVIE PEQUENA","fat":372.04,"pedidos":86},{"rank":3,"produto":"SACOLA LENVIE PEQUENA","fat":372.04,"pedidos":86},{"rank":4,"produto":"SACOLA LENVIE PEQUENA","fat":372.04,"pedidos":86},{"rank":5,"produto":"AGUA PERF FIGO 500ML","fat":817.02,"pedidos":82},{"rank":6,"produto":"AGUA PERF ALECRIM 200ML","fat":604.38,"pedidos":81},{"rank":7,"produto":"SAB BARRA VERMELHO MASP 120G","fat":646.21,"pedidos":43},{"rank":8,"produto":"SAB BARRA CRISTAL MASP 120G","fat":622.56,"pedidos":42},{"rank":9,"produto":"SAB BARRA CONCRETO MASP 120G","fat":615.21,"pedidos":41},{"rank":10,"produto":"SACOLA LENVIE MEDIA","fat":149.52,"pedidos":28}],"8":[{"rank":1,"produto":"AGUA PERF MAGNOLIA 200ML","fat":753.74,"pedidos":116},{"rank":2,"produto":"DISCOVERY PARA CASA 16X1,8ML","fat":2409.45,"pedidos":53},{"rank":3,"produto":"SAB LIQ PEPINO E ERVAS VERDES 500ML","fat":535.85,"pedidos":44},{"rank":4,"produto":"SAB LIQ PEPINO E ERVAS VERDES 500ML","fat":535.85,"pedidos":44},{"rank":5,"produto":"DISCOVERY DE USO PESSOAL 10X1,8ML","fat":1654.07,"pedidos":40},{"rank":6,"produto":"AGUA PERF ALECRIM 200ML","fat":217.07,"pedidos":39},{"rank":7,"produto":"AGUA PERF SPLASH SUMMER 250ML","fat":416.4,"pedidos":30},{"rank":8,"produto":"AGUA PERF SPLASH SUMMER 250ML","fat":416.4,"pedidos":30},{"rank":9,"produto":"VELA PERF PEPINO E ERVAS 140G","fat":359.1,"pedidos":20},{"rank":10,"produto":"SACOLA LENVIE HERBARIUM","fat":88.16,"pedidos":19}],"9":[{"rank":1,"produto":"VELA PERF MACA VERMELHA E CANELA 70G","fat":774.5,"pedidos":50},{"rank":2,"produto":"VELA PERF MACA VERMELHA E CANELA 210G","fat":1100.4,"pedidos":35},{"rank":3,"produto":"SACOLA LENVIE MEDIA","fat":198.0,"pedidos":26},{"rank":4,"produto":"AGUA PERF MAGNOLIA 200ML","fat":153.27,"pedidos":22},{"rank":5,"produto":"DIF DE PERF MACA VERMELHA E CANELA 200ML","fat":549.29,"pedidos":20},{"rank":6,"produto":"DIF DE PERF AMBAR & PATCHOULI 220ML","fat":432.33,"pedidos":16},{"rank":7,"produto":"SAB BARRA MAGNOLIA 150G","fat":103.65,"pedidos":15},{"rank":8,"produto":"SAB BARRA MAGNOLIA 150G","fat":103.65,"pedidos":15},{"rank":9,"produto":"SAB BARRA MAGNOLIA 150G","fat":103.65,"pedidos":15},{"rank":10,"produto":"VELA PERF MATCHA & HINOKI 190G","fat":298.61,"pedidos":13}],"10":[{"rank":1,"produto":"AGUA PERF ALECRIM 200ML","fat":1500.22,"pedidos":210},{"rank":2,"produto":"VELA PERF ALECRIM 210G","fat":1128.05,"pedidos":35},{"rank":3,"produto":"VELA PERF ALECRIM 210G","fat":1128.05,"pedidos":35},{"rank":4,"produto":"REF SAB LIQ FLOR 500ML","fat":218.34,"pedidos":20},{"rank":5,"produto":"SACOLA LENVIE MEDIA","fat":61.02,"pedidos":12},{"rank":6,"produto":"ENVELOPE LENVIE NATAL","fat":11.0,"pedidos":11},{"rank":7,"produto":"AGUA PERF PESSEGO 200ML","fat":38.34,"pedidos":10},{"rank":8,"produto":"EDP 009 FIGORATIVO 50ML","fat":343.38,"pedidos":9},{"rank":9,"produto":"DIF DE PERF FLOR 200ML","fat":197.79,"pedidos":8},{"rank":10,"produto":"EDP 010 ODE A COLOGNE 50ML","fat":281.59,"pedidos":7}],"11":[{"rank":1,"produto":"SACO PLASTICO BOLHA S/ ABA 16x23 (LXC) 142 MICRAS - PARA VELA DE 170G LENVIE","fat":1500.0,"pedidos":3000},{"rank":2,"produto":"VELA PERF TERRA DO SOL LATA 120G","fat":10000.0,"pedidos":1000},{"rank":3,"produto":"VELA PERF TERRA DO SOL LATA 120G","fat":10000.0,"pedidos":1000},{"rank":4,"produto":"CAIXA DE EMBARQUE PADRAO 01 40X30X30 (BC - onda dupla)","fat":3456.0,"pedidos":800},{"rank":5,"produto":"CONJUNTO DE DIVISORIA P/ 12 PECAS","fat":940.0,"pedidos":500},{"rank":6,"produto":"CAIXA DE FOSFORO BEGE","fat":400.0,"pedidos":400},{"rank":7,"produto":"VELA PERF TABACO & VANILLA 190G","fat":2304.75,"pedidos":105},{"rank":8,"produto":"FITA GOMADA IMPRESSA NEOTAPE 60 MM X 80 GRS LENVIE","fat":802.2,"pedidos":60},{"rank":9,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 1L","fat":1184.79,"pedidos":54},{"rank":10,"produto":"VELA PERF BERGAMOTA & FRAMBOESA 190G","fat":1097.5,"pedidos":50}]},"MP - CAMICADO":{"0":[{"rank":1,"produto":"AGUA PERF BAUNILHA AMBAR CAMICADO 1L","fat":270597.6,"pedidos":7000},{"rank":2,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":163423.17,"pedidos":4002},{"rank":3,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":49002.45,"pedidos":1200},{"rank":4,"produto":"AGUA PERF FIGO ORIENTAL 1L","fat":38656.8,"pedidos":1000},{"rank":5,"produto":"AGUA PERF CAJU MUGUET 1L","fat":30925.44,"pedidos":800},{"rank":6,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":19923.12,"pedidos":504},{"rank":7,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":13993.62,"pedidos":354}],"1":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":163423.17,"pedidos":4002},{"rank":2,"produto":"AGUA PERF BAUNILHA AMBAR CAMICADO 1L","fat":115970.4,"pedidos":3000},{"rank":3,"produto":"AGUA PERF CAJU MUGUET 1L","fat":46388.16,"pedidos":1200},{"rank":4,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":39609.06,"pedidos":1002},{"rank":5,"produto":"AGUA PERF FIGO ORIENTAL 1L","fat":38656.8,"pedidos":1000},{"rank":6,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":32831.64,"pedidos":804}],"2":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":204340.22,"pedidos":5004},{"rank":2,"produto":"AGUA PERF BAUNILHA AMBAR CAMICADO 1L","fat":193284.0,"pedidos":5000},{"rank":3,"produto":"MINI KIT DE DIFUSORES CAMICADO 3 x 100 mL","fat":155737.53,"pedidos":4002},{"rank":4,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":61253.06,"pedidos":1500},{"rank":5,"produto":"AGUA PERF CAJU MUGUET 1L","fat":46388.16,"pedidos":1200},{"rank":6,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":39609.06,"pedidos":1002},{"rank":7,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":39609.06,"pedidos":1002},{"rank":8,"produto":"AGUA PERF FIGO ORIENTAL 1L","fat":30925.44,"pedidos":800}],"3":[{"rank":1,"produto":"AGUA PERF BAUNILHA AMBAR CAMICADO 1L","fat":115970.4,"pedidos":3000},{"rank":2,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":81834.09,"pedidos":2004},{"rank":3,"produto":"AGUA PERF CAJU MUGUET 1L","fat":46388.16,"pedidos":1200},{"rank":4,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":32831.64,"pedidos":804},{"rank":5,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":23718.0,"pedidos":600},{"rank":6,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":23718.0,"pedidos":600}]},"MP - TOK&STOK":{"0":[{"rank":1,"produto":"AGUA PERF VANILLA 500ML","fat":21439.66,"pedidos":1008},{"rank":2,"produto":"AGUA PERF VANILLA 500ML","fat":21439.66,"pedidos":1008},{"rank":3,"produto":"AGUA PERF VANILLA 500ML","fat":21439.66,"pedidos":1008},{"rank":4,"produto":"DIFUSOR RODONITA 220ML","fat":48785.63,"pedidos":1000},{"rank":5,"produto":"DIFUSOR RODONITA 220ML","fat":48785.63,"pedidos":1000},{"rank":6,"produto":"DIFUSOR RODONITA 220ML","fat":48785.63,"pedidos":1000},{"rank":7,"produto":"DIFUSOR RODONITA 220ML","fat":48785.63,"pedidos":1000},{"rank":8,"produto":"DIFUSOR RODONITA 220ML","fat":48785.63,"pedidos":1000},{"rank":9,"produto":"VELA PERF VANILLA MON JARDIN 170G","fat":22261.68,"pedidos":504}],"1":[{"rank":1,"produto":"VELA PERFUMADA RODONITA 170G","fat":20613.6,"pedidos":504},{"rank":2,"produto":"VELA PERFUMADA RODONITA 170G","fat":20613.6,"pedidos":504},{"rank":3,"produto":"VELA PERFUMADA RODONITA 170G","fat":20613.6,"pedidos":504},{"rank":4,"produto":"AROMATIZADOR BLACK GENGIBRE 200ML","fat":23360.31,"pedidos":500},{"rank":5,"produto":"VELA PERF POTE SANDALO ESSENCIALS 170G","fat":9843.12,"pedidos":252},{"rank":6,"produto":"VELA PERF POTE SANDALO ESSENCIALS 170G","fat":9843.12,"pedidos":252},{"rank":7,"produto":"VELA PERF POTE SANDALO ESSENCIALS 170G","fat":9843.12,"pedidos":252}],"2":[{"rank":1,"produto":"AGUA PERF VANILLA 500ML","fat":21694.89,"pedidos":1020},{"rank":2,"produto":"DIFUSOR VANILLA MON JARDIM 240ML","fat":54452.56,"pedidos":1008},{"rank":3,"produto":"DIFUSOR VANILLA MON JARDIM 240ML","fat":54452.56,"pedidos":1008},{"rank":4,"produto":"HOME SPRAY BLACK CASSIS 200ML","fat":37799.83,"pedidos":1000},{"rank":5,"produto":"HOME SPRAY BLACK CASSIS 200ML","fat":37799.83,"pedidos":1000},{"rank":6,"produto":"HOME SPRAY BLACK CASSIS 200ML","fat":37799.83,"pedidos":1000},{"rank":7,"produto":"VELA PERF CAPIM LIMAO MON JARDIN 170G","fat":22261.68,"pedidos":504},{"rank":8,"produto":"VELA PERF CAPIM LIMAO MON JARDIN 170G","fat":22261.68,"pedidos":504},{"rank":9,"produto":"VELA PERF CAPIM LIMAO MON JARDIN 170G","fat":22261.68,"pedidos":504}],"3":[{"rank":1,"produto":"DIFUSOR QUARTZO ROSA 220ML","fat":48785.63,"pedidos":1000},{"rank":2,"produto":"DIFUSOR QUARTZO ROSA 220ML","fat":48785.63,"pedidos":1000},{"rank":3,"produto":"VELA PERF POTE CITRICO ESSENCIALS 170G","fat":19686.24,"pedidos":504},{"rank":4,"produto":"VELA PERF POTE CITRICO ESSENCIALS 170G","fat":19686.24,"pedidos":504},{"rank":5,"produto":"AROMATIZADOR BLACK GENGIBRE 200ML","fat":23360.31,"pedidos":500},{"rank":6,"produto":"AROMATIZADOR BLACK GENGIBRE 200ML","fat":23360.31,"pedidos":500},{"rank":7,"produto":"VELA PERF GARDENIA MON JARDIN 170G","fat":11130.84,"pedidos":252},{"rank":8,"produto":"VELA PERF GARDENIA MON JARDIN 170G","fat":11130.84,"pedidos":252},{"rank":9,"produto":"VELA PERF POTE SANDALO ESSENCIALS 170G","fat":8436.96,"pedidos":216}],"5":[{"rank":1,"produto":"ETIQ TEC VELA PERF LATA SUNSET","fat":314.65,"pedidos":1015},{"rank":2,"produto":"LATA METALICA COM TAMPA SUNSET 99X77MM","fat":4388.98,"pedidos":1006},{"rank":3,"produto":"LATA METALICA COM TAMPA SUNSET 99X77MM","fat":4388.98,"pedidos":1006},{"rank":4,"produto":"LUVA LATA SUNSET 10X37CM","fat":2700.0,"pedidos":1000},{"rank":5,"produto":"ETIQ TEC FUNDO VELA PERFUMADA ALECRIM MEDITERRANEO 210G 50X50MM","fat":49.2,"pedidos":410},{"rank":6,"produto":"COPO PRESTIGE ON THE ROCKS 210ML - DECORADO ARABESC GENERICO","fat":1020.0,"pedidos":408},{"rank":7,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":70.67,"pedidos":405},{"rank":8,"produto":"PROTETOR DE VELA LENVIE 74X74MM 1X0 COR 240GR","fat":70.0,"pedidos":400},{"rank":9,"produto":"PROTETOR DE VELA LENVIE 74X74MM 1X0 COR 240GR","fat":70.0,"pedidos":400},{"rank":10,"produto":"PROTETOR DE VELA LENVIE 74X74MM 1X0 COR 240GR","fat":70.0,"pedidos":400}],"6":[{"rank":1,"produto":"FRASCO VISION 250ML R.28/410 NEW-229","fat":17830.8,"pedidos":4572},{"rank":2,"produto":"COPO NADIR 1800 ROCKS BAR 265ML","fat":4883.3,"pedidos":2078},{"rank":3,"produto":"ETIQ ADESIVA CODIGO DE BARRA UNITARIA","fat":108.0,"pedidos":540},{"rank":4,"produto":"COPO BAR ROCKS 265ML -1800 DECORADO MINERALS GARNET BERRY E CHERRY","fat":1029.6,"pedidos":528},{"rank":5,"produto":"CAIXA VELA PERFUMADA GARNET MINERALS 72X72X82MM -170G","fat":1249.97,"pedidos":523},{"rank":6,"produto":"PROTETOR DE VELA GARNET","fat":208.0,"pedidos":520},{"rank":7,"produto":"ETIQ TEC VELA GARNET - 50X50MM 170G","fat":77.85,"pedidos":519},{"rank":8,"produto":"CAIXA DE EMBARQUE PADRAO 12 380x285x265 (BC - onda dupla)","fat":83.55,"pedidos":15},{"rank":9,"produto":"CAIXA DE EMBARQUE PADRAO 12 380x285x265 (BC - onda dupla)","fat":83.55,"pedidos":15},{"rank":10,"produto":"ETIQ ADESIVA CODIGO DE BARRA COLETIVA","fat":3.64,"pedidos":14}],"7":[{"rank":1,"produto":"FLACONETE NATURAL 1 ML","fat":2773.5,"pedidos":30000},{"rank":2,"produto":"FLACONETE DE VIDRO 2ML","fat":4792.5,"pedidos":6750},{"rank":3,"produto":"VALVULA PUMP TONEIRA R28 410 PRETA","fat":1860.0,"pedidos":620},{"rank":4,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":71.55,"pedidos":410},{"rank":5,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":71.55,"pedidos":410},{"rank":6,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":71.55,"pedidos":410},{"rank":7,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":71.55,"pedidos":410},{"rank":8,"produto":"COPO PRESTIGE ON THE ROCKS 210ML - DECORADO ARABESC GENERICO","fat":1020.0,"pedidos":408},{"rank":9,"produto":"CAIXA DE FOSFORO LENVIE BEGE","fat":406.0,"pedidos":406},{"rank":10,"produto":"CONJUNTO DE DIVISORIA P/ 12 PECAS","fat":40.8,"pedidos":17}],"9":[{"rank":1,"produto":"FRASCO DARYA 200ML R.28/410","fat":8864.64,"pedidos":1824},{"rank":2,"produto":"LATA DE ALUMINIO DOURADA 150G","fat":3858.75,"pedidos":1125},{"rank":3,"produto":"CELOFANE ABERTO GENERICO PARA VELA DE 170G 180X332MM","fat":89.1,"pedidos":1100},{"rank":4,"produto":"COPO PRESTIGE ON THE ROCKS 210ML - DECORADO ARABESC GENERICO","fat":2640.0,"pedidos":1056},{"rank":5,"produto":"CARTUCHO VELA PERFUMADA ALECRIM MEDITERRANEO 210G 100X83X83MM","fat":3223.03,"pedidos":1055},{"rank":6,"produto":"PROTETOR DE VELA LENVIE 74X74MM 1X0 COR 240GR","fat":182.88,"pedidos":1045},{"rank":7,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":181.83,"pedidos":1042},{"rank":8,"produto":"ETIQ TEC FUNDO VELA PERFUMADA ALECRIM MEDITERRANEO 210G 50X50MM","fat":124.8,"pedidos":1040},{"rank":9,"produto":"COPO DECORADO VELA PERF BLUE BLOSSOM CAM","fat":1909.2,"pedidos":1032},{"rank":10,"produto":"ROTULO VELA PERF BLUE BLOSSOM CAMICADO","fat":275.4,"pedidos":1020}],"10":[{"rank":1,"produto":"COPO RUVOLO PRESTIGE ON THE ROCKS 210ML","fat":7934.98,"pedidos":2016},{"rank":2,"produto":"BERÇO GENERICO VELA URBAN 23,89X129,12MM","fat":571.64,"pedidos":922},{"rank":3,"produto":"POTE VELA 190GR BOCA 72 DECORADO - NOVA URBAN","fat":2963.52,"pedidos":864},{"rank":4,"produto":"TAMPA ALUMINIO PRETA 18G BOCA 69 ESTAMPADA \"LENVIE\" SEM POLEXAN","fat":529.2,"pedidos":840},{"rank":5,"produto":"TAMPA ALUMINIO PRETA 18G BOCA 69 ESTAMPADA \"LENVIE\" SEM POLEXAN","fat":529.2,"pedidos":840},{"rank":6,"produto":"CARTUCHO VELA MATCHA & HINOKI URBAN 125X83X83MM","fat":1844.64,"pedidos":488},{"rank":7,"produto":"ETIQ TEC VELA MATCHA & HINOKI URBAN 50X50MM","fat":86.4,"pedidos":480},{"rank":8,"produto":"CARTUCHO VELA TABACO & VANILA URBAN 125X83X83MM","fat":1701.0,"pedidos":450},{"rank":9,"produto":"ETIQ TEC VELA TABACO & VANILA URBAN 50X50MM","fat":76.32,"pedidos":424}],"11":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":2167.2,"pedidos":10320},{"rank":2,"produto":"FRASCO PET 200ML 24/410 CIL RETO","fat":3356.16,"pedidos":4416},{"rank":3,"produto":"TAMPA ALUMINIO SIMPLES PRETA \"LENVIE\" R24/410 SEM FURO","fat":1513.6,"pedidos":4300},{"rank":4,"produto":"ROTULO REFIL DIFUSOR MAGNOLIA PACIFICA 90X143MM - 200ML - LECOSMETIQUE","fat":1742.0,"pedidos":2680},{"rank":5,"produto":"FRASCO PET 350ML R28/410 CIL RETO","fat":2269.5,"pedidos":2550},{"rank":6,"produto":"VALVULA BICO DE PATO DOURADA R28/410 45","fat":6600.0,"pedidos":2500},{"rank":7,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":363.95,"pedidos":2130},{"rank":8,"produto":"ETIQ FUNDO DIFUSOR FIGO AMBARADO 45X45MM - 200ML - VINIL TRANSPARENTE FOSCO","fat":216.0,"pedidos":1800},{"rank":9,"produto":"ETIQ FUNDO DIFUSOR FIGO AMBARADO 45X45MM - 200ML - VINIL TRANSPARENTE FOSCO","fat":216.0,"pedidos":1800},{"rank":10,"produto":"CARTUCHO DIFUSOR FIGO AMBARADO 72X72X255MM 300G - LECOSMETIQUE","fat":4200.0,"pedidos":1750}]},"MP - OUTRAS":{"0":[{"rank":1,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500},{"rank":2,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500},{"rank":3,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500},{"rank":4,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500},{"rank":5,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500},{"rank":6,"produto":"EAU DE PARFUM POUR ELLE - TESTER - 100ML","fat":27025.0,"pedidos":500}],"1":[{"rank":1,"produto":"EAU DE PARFUM MASCULINO SOUL - 50ML","fat":121269.68,"pedidos":1500}],"2":[{"rank":1,"produto":"EAU DE PARFUM MISS V 100ML","fat":190380.35,"pedidos":2000},{"rank":2,"produto":"EAU DE PARFUM MISS V - TESTER 100ML","fat":32250.0,"pedidos":500}],"3":[{"rank":1,"produto":"EAU DE PARFUM V LIGHT MASCULINO 100ML","fat":223136.21,"pedidos":2400},{"rank":2,"produto":"EAU DE PARFUM VIVARA MASCULINO AZUL 100ML","fat":185946.84,"pedidos":2000},{"rank":3,"produto":"EAU DE PARFUM VIVARA MASCULINO PRETO 100ML","fat":111568.1,"pedidos":1200},{"rank":4,"produto":"OLEO MAGNOLIA SHOPPING GARDEN 1L","fat":4904.38,"pedidos":25}],"4":[{"rank":1,"produto":"CARTAO AGRADECIMENTO LENVIE 90X90MM COUCHE 300GR FOSCO","fat":2340.0,"pedidos":6000},{"rank":2,"produto":"LACRE DE PVC TERMO RETRATIL 69X78X40 PARA 500ML","fat":267.3,"pedidos":4860},{"rank":3,"produto":"VALVULA MINI GATILHO TRANSP R28 410 155","fat":7147.5,"pedidos":4765},{"rank":4,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":5561.21,"pedidos":4620},{"rank":5,"produto":"ROTULO AGUA PERFUMADA PATCHOULI VANILLA 500ML - BPN - 120X130 BOPP FOSCO","fat":2457.0,"pedidos":2700},{"rank":6,"produto":"FRASCO CILINDRICO 130ML R28/410","fat":11234.4,"pedidos":2480},{"rank":7,"produto":"ROTULO AGUA PERFUMADA INTO THE NIGHT 500ML - BPN - BOPP HOTSTAMPING PRATA 120X130MM","fat":2037.2,"pedidos":2315},{"rank":8,"produto":"PAPEL SEDA BCO C/100FL VMP","fat":43000.0,"pedidos":2000},{"rank":9,"produto":"LUVA PARA ESTOJO ELETRICO MAGNOLIA PACIFICA 4X0 COR 146X146X52MM","fat":2655.21,"pedidos":1637},{"rank":10,"produto":"CAIXA KIT BARRA DE CERA - COM 5 UNIDADES","fat":3020.0,"pedidos":1510}],"5":[{"rank":1,"produto":"COPO RUVOLO PRESTIGE ON THE ROCKS 210ML","fat":7084.8,"pedidos":1800},{"rank":2,"produto":"FRASCO DARYA 200ML R.28/410","fat":5365.44,"pedidos":1104},{"rank":3,"produto":"CARTUCHO SABONETE VEGETAL HIDRATANTE LENVIE E AGUA DE COCO 60MM X 62MM X 24MM","fat":850.0,"pedidos":1000},{"rank":4,"produto":"AGUA PERF FIGO 500ML","fat":20870.5,"pedidos":623},{"rank":5,"produto":"SAB LIQ FIGO 200ML","fat":15913.5,"pedidos":309},{"rank":6,"produto":"FRAGRANCIA NEW VANILLA - PATCHOULI VANILLA","fat":62911.2,"pedidos":240},{"rank":7,"produto":"FRAGRANCIA JUICYLICIOUS NOVO - INTO THE NIGHT ALCOOLICA E VELA","fat":58468.0,"pedidos":200},{"rank":8,"produto":"ROTULO AGUA PERFUMADA PATCHOULI VANILLA 500ML - BPN - 120X130 BOPP FOSCO","fat":136.5,"pedidos":150},{"rank":9,"produto":"ROTULO AGUA PERFUMADA PATCHOULI VANILLA 500ML - BPN - 120X130 BOPP FOSCO","fat":136.5,"pedidos":150},{"rank":10,"produto":"SAB LIQ FLOR 350ML","fat":4416.0,"pedidos":138}],"6":[{"rank":1,"produto":"VARETA DE FIBRA PRETA 4X25CM IMP","fat":20489.17,"pedidos":130000},{"rank":2,"produto":"VARETA DE RATTAN JG C/6 3X25 IMP","fat":50585.55,"pedidos":75000},{"rank":3,"produto":"VARETA DE FIBRA BRANCA 4X25 IMP","fat":8865.6,"pedidos":60000},{"rank":4,"produto":"FRASCO VIENA 100ML FEA 15","fat":54326.25,"pedidos":9000},{"rank":5,"produto":"LACRE DE PVC TERMO RETRATIL 69X78X40 PARA 500ML","fat":252.62,"pedidos":4593},{"rank":6,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":5452.88,"pedidos":4530},{"rank":7,"produto":"VALVULA MINI GATILHO TRANSP R28 410 155","fat":6652.5,"pedidos":4435},{"rank":8,"produto":"CELOFANE ABERTO GENERICO PARA VELA DE 170G 180X332MM","fat":214.72,"pedidos":2651},{"rank":9,"produto":"FRASCO SQUARE 250ML R28/410","fat":10710.0,"pedidos":2520},{"rank":10,"produto":"FRASCO SQUARE 250ML R28/410","fat":10710.0,"pedidos":2520}],"7":[{"rank":1,"produto":"FRASCO CILINDRICO 100ML REC 15/GPI 802","fat":17760.0,"pedidos":4440},{"rank":2,"produto":"ROTULO AGUA PERFUMADA MANDARINA CEYLON 500ML - BPN - BOPP FOSCO 120X130MM","fat":2902.46,"pedidos":3674},{"rank":3,"produto":"ROTULO AGUA PERFUMADA MANDARINA CEYLON 500ML - BPN - BOPP FOSCO 120X130MM","fat":2902.46,"pedidos":3674},{"rank":4,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":4381.56,"pedidos":3640},{"rank":5,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":4381.56,"pedidos":3640},{"rank":6,"produto":"FRASCO COPACABANA 200ML R.28/410","fat":19029.24,"pedidos":3600},{"rank":7,"produto":"FRASCO VIDRO AMAZONIA R28 FLINT 220ML","fat":19374.65,"pedidos":3108},{"rank":8,"produto":"FRASCO CILINDRICO PICOLO 240ML R28/410 TRANSP - 946BL","fat":2976.6,"pedidos":660},{"rank":9,"produto":"ROTULO VELA PEPINO & ERVAS VERDES 39X230","fat":403.0,"pedidos":650},{"rank":10,"produto":"TAMPA METALICA 70MM PRETA BRILHO","fat":762.5,"pedidos":610}],"8":[{"rank":1,"produto":"VARETA DE RATTAN 3X25CM","fat":6979.56,"pedidos":33236},{"rank":2,"produto":"ADESIVO LACRE REDONDO VINIL TRANSPARENTE BRILHO - 40X40MM","fat":981.15,"pedidos":6330},{"rank":3,"produto":"AGUA PERF PATCHOULI 500ML","fat":17912.4,"pedidos":2205},{"rank":4,"produto":"CARTUCHO VELA PERF MACA E CANELA 70G","fat":4779.5,"pedidos":2050},{"rank":5,"produto":"CARTUCHO VELA PERF MACA E CANELA 70G","fat":4779.5,"pedidos":2050},{"rank":6,"produto":"COPO DECORADO MACA VERM E CANELA 70G","fat":6426.0,"pedidos":1890},{"rank":7,"produto":"ETIQ TEC VELA MACA E CANELA 35X35MM 70G","fat":244.4,"pedidos":1880},{"rank":8,"produto":"CAIXA EXPEDICAO TAMANHO M PARDA - 208 x 152 x 260MM DCSS-B SZ","fat":5772.0,"pedidos":1850},{"rank":9,"produto":"SAB BARRA FIGO 80G","fat":18295.2,"pedidos":1848},{"rank":10,"produto":"PROTETOR VELA 70G 40X3MM HOT OURO","fat":1292.2,"pedidos":1820}],"9":[{"rank":1,"produto":"VARETA DE FIBRA NUDE 19 CM - EXCLUSIVA KIT MINI CAMICADO","fat":1760.0,"pedidos":8000},{"rank":2,"produto":"FRASCO PET 100ML R24 MINI CAMICADO","fat":1800.0,"pedidos":2500},{"rank":3,"produto":"FRASCO PET 100ML R24 MINI CAMICADO","fat":1800.0,"pedidos":2500},{"rank":4,"produto":"BATOQUE NATURAL 21MM (19.7MM)","fat":236.54,"pedidos":2410},{"rank":5,"produto":"ENVELOPE LENVIE NATAL","fat":19.86,"pedidos":1986},{"rank":6,"produto":"VELA PERF MACA VERMELHA E CANELA 70G","fat":29522.16,"pedidos":1878},{"rank":7,"produto":"ADESIVO LACRE REDONDO VINIL TRANSPARENTE BRILHO - 40X40MM","fat":290.16,"pedidos":1872},{"rank":8,"produto":"CARTUCHO VANILLA WOOD 300G C/ HOT","fat":7005.7,"pedidos":1585},{"rank":9,"produto":"CARTUCHO FRAMBOESA MUSK 300G C/ HOT","fat":6718.4,"pedidos":1520},{"rank":10,"produto":"VELA PERF MACA VERMELHA E CANELA 210G","fat":48609.28,"pedidos":1504}],"10":[{"rank":1,"produto":"VARETA DE FIBRA NUDE 4X25CM","fat":2561.0,"pedidos":19700},{"rank":2,"produto":"COPO RUVOLO PRESTIGE ON THE ROCKS 210ML","fat":70281.22,"pedidos":17856},{"rank":3,"produto":"FRASCO DUBLIN 200ML R28 410","fat":72667.85,"pedidos":16032},{"rank":4,"produto":"VARETA DE RATTAN 3X25CM","fat":1302.0,"pedidos":6200},{"rank":5,"produto":"CELOFANE ABERTO 3027 POLIEM S 290 x 320 mm - DIFUSOR CAMICADO","fat":62.1,"pedidos":5400},{"rank":6,"produto":"ETIQ ADESIVA CODIGO DE BARRA UNITARIA","fat":1021.2,"pedidos":5106},{"rank":7,"produto":"TAMPA ALUMINIO R28/410 C/FURO DOURADA CLARO BRILHO","fat":5700.0,"pedidos":5000},{"rank":8,"produto":"TAMPA ALUMINIO R28/410 C/FURO DOURADA CLARO BRILHO","fat":5700.0,"pedidos":5000},{"rank":9,"produto":"CARTUCHO DIFUSOR DE PERFUMES BAUNILHA CAMICADO 4X0 250ML","fat":5135.0,"pedidos":3250},{"rank":10,"produto":"FRASCO DECORADO VANILLA CAMICADO SERIGRAFIA SIMPLES 250ML","fat":6192.0,"pedidos":3096}],"11":[{"rank":1,"produto":"FRASCO DUBLIN 200ML R28 410","fat":90943.59,"pedidos":20064},{"rank":2,"produto":"VARETA DE RATTAN 3X25CM","fat":3381.0,"pedidos":16100},{"rank":3,"produto":"VARETA DE FIBRA PRETA 4X25CM","fat":1796.46,"pedidos":5800},{"rank":4,"produto":"CELOFANE PROTETOR FRASCO 115 X 130 MM (CINTA C/FUNDO ABERTO) ARABESC/ELEMENTOS","fat":214.0,"pedidos":5350},{"rank":5,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":1183824.74,"pedidos":5090},{"rank":6,"produto":"VALVULA BICO DE PATO DOURADA R28/410 45","fat":11076.0,"pedidos":4070},{"rank":7,"produto":"ETIQ SELO DOURADO METALIZADO 40MM","fat":1290.04,"pedidos":3990},{"rank":8,"produto":"FRASCO DUBLIN R28/410 200ML - DECORADO ARABESC GENERICO","fat":8764.8,"pedidos":3984},{"rank":9,"produto":"BATOQUE NATURAL 21MM (19.7MM)","fat":586.07,"pedidos":3490},{"rank":10,"produto":"TAMPA PRETA LACRE R28/410","fat":335.0,"pedidos":3350}]},"Exportação":{"0":[{"rank":1,"produto":"AGUA PERF FIGO 500ML X","fat":22049.52,"pedidos":250},{"rank":2,"produto":"AGUA PERF FIGO 500ML X","fat":22049.52,"pedidos":250},{"rank":3,"produto":"AGUA PERF FIGO 500ML X","fat":22049.52,"pedidos":250},{"rank":4,"produto":"AGUA PERF FIGO 500ML X","fat":22049.52,"pedidos":250},{"rank":5,"produto":"AGUA PERF FIGO 500ML X","fat":22049.52,"pedidos":250},{"rank":6,"produto":"VELA PERF MANDARINA 210G X","fat":37777.36,"pedidos":105},{"rank":7,"produto":"VELA PERF MANDARINA 210G X","fat":37777.36,"pedidos":105},{"rank":8,"produto":"VELA PERF MANDARINA 210G X","fat":37777.36,"pedidos":105},{"rank":9,"produto":"VELA PERF MANDARINA 210G X","fat":37777.36,"pedidos":105},{"rank":10,"produto":"DIF DE PERF CITRUS 200ML X","fat":35853.37,"pedidos":100}],"1":[{"rank":1,"produto":"VELA PERF FLOR 210G X","fat":394.78,"pedidos":3},{"rank":2,"produto":"DIF DE PERF FLOR 200ML X","fat":382.75,"pedidos":3},{"rank":3,"produto":"SAB LIQ FLOR 200ML X","fat":271.03,"pedidos":3},{"rank":4,"produto":"SAB LIQ ALECRIM 200ML X","fat":256.75,"pedidos":3},{"rank":5,"produto":"DIF DE PERF ALECRIM 200ML X","fat":368.48,"pedidos":3},{"rank":6,"produto":"HOME SPRAY FLOR 200ML X","fat":299.59,"pedidos":3},{"rank":7,"produto":"SAB LIQ SUNSET 250ML X","fat":225.55,"pedidos":2},{"rank":8,"produto":"SAB LIQ FOUNTAIN 250ML X","fat":225.55,"pedidos":2},{"rank":9,"produto":"SAB LIQ FOUNTAIN 250ML X","fat":225.55,"pedidos":2},{"rank":10,"produto":"SAB LIQ FOUNTAIN 250ML X","fat":225.55,"pedidos":2}],"6":[{"rank":1,"produto":"COPO NADIR 1800 ROCKS BAR 265ML","fat":0.63,"pedidos":0},{"rank":2,"produto":"COPO NADIR 1800 ROCKS BAR 265ML","fat":0.63,"pedidos":0}],"8":[{"rank":1,"produto":"VALVULA BICO DE PATO DOURADA R.28/410 20","fat":3.0,"pedidos":1},{"rank":2,"produto":"TAMPA ALUMINIO R28/410 C/FURO DOURADA CLARO BRILHO","fat":3.13,"pedidos":0}]}},"2026":{"Atacado / Representantes":{"0":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1696.0,"pedidos":1696},{"rank":2,"produto":"AGUA PERF MAGNOLIA 500ML","fat":56224.4,"pedidos":1432},{"rank":3,"produto":"AGUA PERF PATCHOULI 500ML","fat":49380.74,"pedidos":1268},{"rank":4,"produto":"REF DIF PERF PATCHOULI 200ML","fat":57349.94,"pedidos":1254},{"rank":5,"produto":"DIF DE PERF PATCHOULI 200ML","fat":86288.02,"pedidos":1184},{"rank":6,"produto":"AGUA PERF INTO 500ML","fat":46062.43,"pedidos":1166},{"rank":7,"produto":"REF DIF PERF INTO 250ML","fat":57298.29,"pedidos":1140},{"rank":8,"produto":"DIF DE PERF MAGNOLIA 200ML","fat":79072.18,"pedidos":1038},{"rank":9,"produto":"AGUA PERF ALECRIM 500ML","fat":38722.58,"pedidos":994},{"rank":10,"produto":"AGUA PERF FIGO 500ML","fat":34040.2,"pedidos":866}],"1":[{"rank":1,"produto":"AGUA PERF PATCHOULI 500ML","fat":71071.66,"pedidos":1782},{"rank":2,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":1600.45,"pedidos":1601},{"rank":3,"produto":"AGUA PERF INTO 500ML","fat":64040.66,"pedidos":1570},{"rank":4,"produto":"AGUA PERF MAGNOLIA 500ML","fat":45721.66,"pedidos":1128},{"rank":5,"produto":"AGUA PERF PATCHOULI 1L","fat":51904.45,"pedidos":1102},{"rank":6,"produto":"REF DIF PERF MANDARINA 200ML","fat":50161.04,"pedidos":1026},{"rank":7,"produto":"AGUA PERF ALECRIM 500ML","fat":40091.45,"pedidos":996},{"rank":8,"produto":"REF DIF PERF MAGNOLIA 200ML","fat":48049.95,"pedidos":984},{"rank":9,"produto":"DIF DE PERF PATCHOULI 200ML","fat":73002.1,"pedidos":974},{"rank":10,"produto":"DIF DE PERF INTO 250ML","fat":79617.78,"pedidos":940}],"2":[{"rank":1,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":2198.75,"pedidos":2199},{"rank":2,"produto":"AGUA PERF PATCHOULI 500ML","fat":90070.83,"pedidos":2157},{"rank":3,"produto":"REF DIF PERF PATCHOULI 200ML","fat":90785.96,"pedidos":1788},{"rank":4,"produto":"AGUA PERF INTO 500ML","fat":64761.19,"pedidos":1552},{"rank":5,"produto":"AGUA PERF MAGNOLIA 500ML","fat":57410.19,"pedidos":1375},{"rank":6,"produto":"OLEO CONC INTO 20ML","fat":40584.11,"pedidos":1332},{"rank":7,"produto":"REF DIF PERF MANDARINA 200ML","fat":66995.76,"pedidos":1320},{"rank":8,"produto":"REF DIF PERF MANDARINA 200ML","fat":66995.76,"pedidos":1320},{"rank":9,"produto":"DIF DE PERF PATCHOULI 200ML","fat":94099.0,"pedidos":1235},{"rank":10,"produto":"DIF DE PERF MAGNOLIA 200ML","fat":90576.68,"pedidos":1185}],"3":[{"rank":1,"produto":"SACOLA LENVIE ESPECIAL M 2026","fat":4552.0,"pedidos":4522},{"rank":2,"produto":"FITA OLFATIVA RETA 78X20MM 50 UNI","fat":2360.8,"pedidos":2361},{"rank":3,"produto":"AGUA PERF PATCHOULI 500ML","fat":66943.95,"pedidos":1782},{"rank":4,"produto":"REF DIF PERF PATCHOULI 200ML","fat":88768.84,"pedidos":1748},{"rank":5,"produto":"AGUA PERF INTO 500ML","fat":58326.84,"pedidos":1552},{"rank":6,"produto":"REF DIF PERF MANDARINA 200ML","fat":75181.09,"pedidos":1476},{"rank":7,"produto":"DIF DE PERF PATCHOULI 200ML","fat":112988.96,"pedidos":1468},{"rank":8,"produto":"AGUA PERF MAGNOLIA 500ML","fat":53337.08,"pedidos":1422},{"rank":9,"produto":"OLEO CONC PATCHOULI 20ML","fat":38717.03,"pedidos":1288},{"rank":10,"produto":"AGUA PERF ALECRIM 500ML","fat":45794.48,"pedidos":1224}],"4":[{"rank":1,"produto":"LACRE DE PVC TERMO RETRATIL 69X40X40","fat":6992.0,"pedidos":138400},{"rank":2,"produto":"FLACONETE DE VIDRO 2ML","fat":55642.75,"pedidos":78775},{"rank":3,"produto":"VARETA DE RATTAN JG C/6 3X25 IMP","fat":36795.6,"pedidos":74719},{"rank":4,"produto":"FRASCO PET 500ML TRANSPARENTE R.28/410 CIL RETO","fat":80086.0,"pedidos":68305},{"rank":5,"produto":"VALVULA SPRAY PRETA R20/410 COM TAMPA","fat":36359.94,"pedidos":66967},{"rank":6,"produto":"VALVULA MINI GATILHO TRANSP R28 410 155","fat":62739.0,"pedidos":64600},{"rank":7,"produto":"VALVULA PRETA EASY SPRAY P/2ML","fat":63444.0,"pedidos":62200},{"rank":8,"produto":"LACRE DE PVC TERMO RETRATIL 148X80X40 1L","fat":9524.48,"pedidos":49188},{"rank":9,"produto":"FRASCO DUBLIN R28/410 200ML - DECOR ARABESC GENERICO","fat":86935.4,"pedidos":43597},{"rank":10,"produto":"FRASCO DUBLIN R28/410 200ML - DECORADO ARABESC GENERICO","fat":80722.56,"pedidos":40608}]},"Ecommerce":{"0":[{"rank":1,"produto":"REFIL DIFUSOR DE PERFUME PATCHOULI VANILLA - 200ML","fat":31118.91,"pedidos":327},{"rank":2,"produto":"REFIL DIFUSOR DE PERFUME ALECRIM MEDITERRANEO ARABESC - 200ML","fat":20881.88,"pedidos":233},{"rank":3,"produto":"REFIL DIFUSOR DE PERFUME FIGO AMBARADO - 200ML","fat":19849.83,"pedidos":212},{"rank":4,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 1L","fat":19327.64,"pedidos":199},{"rank":5,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":17095.51,"pedidos":184},{"rank":6,"produto":"REFIL DIFUSOR DE PERFUME FLOR DE LARANJEIRA ELEMENTOS - 200ML","fat":15436.45,"pedidos":168},{"rank":7,"produto":"SACOLA LENVIE PEQUENA","fat":615.82,"pedidos":140},{"rank":8,"produto":"REFIL DIFUSOR DE PERFUME INTO THE NIGHT - 250ML","fat":14023.74,"pedidos":139},{"rank":9,"produto":"REFIL DIFUSOR DE PERFUME MUSGO DE CARVALHO ELEMENTOS - 200ML","fat":11931.98,"pedidos":126},{"rank":10,"produto":"AGUA PERFUMADA FIGO AMBARADO ARABESC - 500ML","fat":8159.72,"pedidos":107}],"1":[{"rank":1,"produto":"AMOSTRA LOCAO MARACUJA 5G","fat":270.88,"pedidos":256},{"rank":2,"produto":"REFIL DIFUSOR DE PERFUME PATCHOULI VANILLA - 200ML","fat":21697.42,"pedidos":215},{"rank":3,"produto":"REFIL DIFUSOR DE PERFUME FIGO AMBARADO - 200ML","fat":13541.1,"pedidos":136},{"rank":4,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":12600.93,"pedidos":126},{"rank":5,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":12600.93,"pedidos":126},{"rank":6,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":12600.93,"pedidos":126},{"rank":7,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":12600.93,"pedidos":126},{"rank":8,"produto":"REFIL DIFUSOR DE PERFUME MAGNOLIA PACIFICA - 200ML","fat":12600.93,"pedidos":126},{"rank":9,"produto":"REFIL DIFUSOR DE PERFUME INTO THE NIGHT - 250ML","fat":13291.1,"pedidos":119},{"rank":10,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 500ML","fat":8237.65,"pedidos":99}],"2":[{"rank":1,"produto":"AMOSTRA LOCAO MARACUJA 5G","fat":103.78,"pedidos":895},{"rank":2,"produto":"AGUA PERF TERRA DO SOL 500ML","fat":7046.81,"pedidos":201},{"rank":3,"produto":"REFIL DIFUSOR DE PERFUME FIGO AMBARADO - 200ML","fat":13205.55,"pedidos":126},{"rank":4,"produto":"REFIL DIFUSOR DE PERFUME MANDARINA CEYLON - 200ML","fat":13129.95,"pedidos":124},{"rank":5,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 1L","fat":13299.27,"pedidos":122},{"rank":6,"produto":"SACOLA LENVIE MEDIA","fat":613.79,"pedidos":121},{"rank":7,"produto":"SACOLA LENVIE MEDIA","fat":613.79,"pedidos":121},{"rank":8,"produto":"DIFUSOR DE PERFUME PATCHOULI VANILLA ARABESC - 200ML","fat":19392.37,"pedidos":117},{"rank":9,"produto":"REFIL DIFUSOR DE PERFUME ALECRIM MEDITERRANEO ARABESC - 200ML","fat":11673.48,"pedidos":110},{"rank":10,"produto":"VELA PERFUMADA HAPPY PLACE SMILEY - 170G","fat":158.97,"pedidos":109}],"3":[{"rank":1,"produto":"REF DIF PERF PATCHOULI 200ML","fat":29137.63,"pedidos":262},{"rank":2,"produto":"REFIL DIFUSOR DE PERFUME PATCHOULI VANILLA - 200ML","fat":18309.63,"pedidos":233},{"rank":3,"produto":"DISCOVERY DE USO PESSOAL 10X1,8ML","fat":18140.29,"pedidos":169},{"rank":4,"produto":"OLEO CONC PATCHOULI 20ML","fat":10341.04,"pedidos":163},{"rank":5,"produto":"SACOLA LENVIE GRANDE","fat":1108.18,"pedidos":150},{"rank":6,"produto":"CREME DE MAO TERRA DO SOL 40G","fat":2756.89,"pedidos":128},{"rank":7,"produto":"VELA PERF MATCHA & HINOKI 190G","fat":11732.14,"pedidos":124},{"rank":8,"produto":"AGUA PERFUMADA PATCHOULI VANILLA ARABESC - 1L","fat":10212.84,"pedidos":121},{"rank":9,"produto":"REF DIF PERF FIGO 200ML","fat":12486.91,"pedidos":114},{"rank":10,"produto":"REFIL DIFUSOR DE PERFUME FIGO AMBARADO - 200ML","fat":8890.47,"pedidos":112}],"4":[{"rank":1,"produto":"SACOLA LENVIE PEQUENA","fat":613.08,"pedidos":131},{"rank":2,"produto":"SAB LIQ FLOR 200ML","fat":1282.3,"pedidos":62},{"rank":3,"produto":"AGUA PERF ALECRIM 200ML","fat":509.85,"pedidos":60},{"rank":4,"produto":"AGUA PERF ALECRIM 200ML","fat":509.85,"pedidos":60},{"rank":5,"produto":"KIT AROMATIZADOR ELETRICO + OLEO CONCENTRADO LAVANDA ABSOLUTA - ARABESC - 20ML","fat":3923.5,"pedidos":50},{"rank":6,"produto":"KIT AROMATIZADOR ELETRICO + OLEO CONCENTRADO LAVANDA ABSOLUTA - ARABESC - 20ML","fat":3923.5,"pedidos":50},{"rank":7,"produto":"KIT AROMATIZADOR ELETRICO + OLEO CONCENTRADO LAVANDA ABSOLUTA - ARABESC - 20ML","fat":3923.5,"pedidos":50},{"rank":8,"produto":"KIT AROMATIZADOR ELETRICO + OLEO CONCENTRADO LAVANDA ABSOLUTA - ARABESC - 20ML","fat":3923.5,"pedidos":50},{"rank":9,"produto":"KIT AROMATIZADOR ELETRICO + OLEO CONCENTRADO INTO THE NIGHT - CLASSIC - 20ML","fat":3845.03,"pedidos":49},{"rank":10,"produto":"DIF DE PERF PEONIA & LIMA 220ML","fat":1297.82,"pedidos":33}]},"MP - CAMICADO":{"0":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":2,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":3,"produto":"AGUA PERF BLUE BLOSSOM 1L","fat":60865.88,"pedidos":1500},{"rank":4,"produto":"AGUA PERF BLUE BLOSSOM 1L","fat":60865.88,"pedidos":1500},{"rank":5,"produto":"VELA PERF BLUE BLOSSOM CAMICADO 170G","fat":41082.0,"pedidos":1002},{"rank":6,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":20581.03,"pedidos":504},{"rank":7,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":20581.03,"pedidos":504},{"rank":8,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":16415.82,"pedidos":402},{"rank":9,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":11859.0,"pedidos":300},{"rank":10,"produto":"VELA PERF FIGO ORIENTAL CAMICADO 170G","fat":8064.12,"pedidos":204}],"1":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":2,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":81834.09,"pedidos":2004},{"rank":3,"produto":"AGUA PERF BAMBU MOSSO 1L","fat":57985.2,"pedidos":1500},{"rank":4,"produto":"AGUA PERF BAMBU MOSSO 1L","fat":57985.2,"pedidos":1500},{"rank":5,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":11859.0,"pedidos":300}],"2":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":2,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":3,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":81834.09,"pedidos":2004},{"rank":4,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":40917.05,"pedidos":1002},{"rank":5,"produto":"DIF DE PERF FIGO ORIENTAL 250ML","fat":40917.05,"pedidos":1002},{"rank":6,"produto":"AGUA PERF CAJU MUGUET 1L","fat":38656.8,"pedidos":1000},{"rank":7,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":19923.12,"pedidos":504},{"rank":8,"produto":"AGUA PERF FIGO ORIENTAL 1L","fat":11597.04,"pedidos":300},{"rank":9,"produto":"AGUA PERF FIGO ORIENTAL 1L","fat":11597.04,"pedidos":300}],"3":[{"rank":1,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":2,"produto":"DIF DE PERF BAUNILHA AMBAR 250ML","fat":122506.13,"pedidos":3000},{"rank":3,"produto":"DIF DE PERF CAJU MUGUET 250ML","fat":40917.05,"pedidos":1002},{"rank":4,"produto":"VELA PERF FIGO ORIENTAL CAMICADO 170G","fat":32019.3,"pedidos":810},{"rank":5,"produto":"VELA PERF BAUNILHA AMBAR CAMICADO 170G","fat":19923.12,"pedidos":504},{"rank":6,"produto":"VELA PERF CAJU MUGUET CAMICADO 170G","fat":11859.0,"pedidos":300}]},"MP - TOK&STOK":{"0":[{"rank":1,"produto":"AROMATIZADOR CAPIM LIMAO 240ML","fat":54452.56,"pedidos":1008},{"rank":2,"produto":"AROMATIZADOR CAPIM LIMAO 240ML","fat":54452.56,"pedidos":1008},{"rank":3,"produto":"AROMATIZADOR CAPIM LIMAO 240ML","fat":54452.56,"pedidos":1008},{"rank":4,"produto":"AROMATIZADOR CAPIM LIMAO 240ML","fat":54452.56,"pedidos":1008},{"rank":5,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000},{"rank":6,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000},{"rank":7,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000},{"rank":8,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000},{"rank":9,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000},{"rank":10,"produto":"AGUA PERF BOUQUET XODO 500ML","fat":23747.5,"pedidos":1000}],"2":[{"rank":1,"produto":"DIFUSOR SANDALO 200ML","fat":43365.0,"pedidos":1000},{"rank":2,"produto":"DIFUSOR SANDALO 200ML","fat":43365.0,"pedidos":1000},{"rank":3,"produto":"VELA PERF POTE MUSK ESSENCIALS 170G","fat":19686.24,"pedidos":504}],"4":[{"rank":1,"produto":"FLACONETE DE VIDRO 2ML","fat":20412.5,"pedidos":28750}]},"MP - OUTRAS":{"0":[{"rank":1,"produto":"AGUA PERF ALTENBURG 1L","fat":103642.35,"pedidos":2868},{"rank":2,"produto":"HOME SPRAY ALTENBURG 250ML","fat":107164.8,"pedidos":2440},{"rank":3,"produto":"DIF DE PERF ALTENBURG 250ML","fat":118789.13,"pedidos":1770},{"rank":4,"produto":"VELA PERF ALTENBURG 200G","fat":63504.0,"pedidos":1008},{"rank":5,"produto":"SAB LIQ ALTENBURG 250ML","fat":34612.5,"pedidos":1000},{"rank":6,"produto":"SAB LIQ ALTENBURG 250ML","fat":34612.5,"pedidos":1000},{"rank":7,"produto":"VELA PERF LENNY NIEMEYER 210G","fat":21600.0,"pedidos":300},{"rank":8,"produto":"VELA PERF LENNY NIEMEYER 210G","fat":21600.0,"pedidos":300},{"rank":9,"produto":"VELA PERF LENNY NIEMEYER 210G","fat":21600.0,"pedidos":300},{"rank":10,"produto":"HOME SPRAY TERRA DO SOL 5L","fat":36550.5,"pedidos":60}],"2":[{"rank":1,"produto":"HOME SPRAY NATI VOZZA 200 ML TRANSIÇÃO","fat":86961.6,"pedidos":1296}],"4":[{"rank":1,"produto":"FRASCO CILINDRICO 100ML REC 15/GPI 802","fat":141264.0,"pedidos":32400},{"rank":2,"produto":"FRASCO VISION 250ML R.28/410 NEW-229","fat":125936.72,"pedidos":24012},{"rank":3,"produto":"FRASCO RETANGULAR MONSIEUR R15 FEA 100ML IMPORT","fat":15100.0,"pedidos":10000},{"rank":4,"produto":"FRASCO DUBLIN R28/410 200ML IMPORTADO","fat":28180.8,"pedidos":9120},{"rank":5,"produto":"COPO PRESTIGE ON THE ROCKS 210ML","fat":33868.8,"pedidos":6048},{"rank":6,"produto":"COPO NADIR 1800 ROCKS BAR 265ML","fat":11022.48,"pedidos":4536},{"rank":7,"produto":"FRASCO SQUARE 250ML R28/410","fat":17000.0,"pedidos":4000},{"rank":8,"produto":"CARTUCHO SAB VEG EM BARRA FIGO AMBARADO 140,16mmX185,81mm - 80G","fat":4849.5,"pedidos":3050},{"rank":9,"produto":"VALVULA SPRAY PRATA FOSCA REC15","fat":2258.12,"pedidos":2764},{"rank":10,"produto":"FRASCO DARYA/COLISEU R28/410 200ML IMPORTADO","fat":7741.44,"pedidos":2304}]},"Exportação":{"3":[{"rank":1,"produto":"AGUA PERF MAGNOLIA 500ML X","fat":8663.07,"pedidos":92},{"rank":2,"produto":"AGUA PERF MAGNOLIA 500ML X","fat":8663.07,"pedidos":92},{"rank":3,"produto":"AGUA PERF CITRUS 500ML X","fat":8398.99,"pedidos":90},{"rank":4,"produto":"AGUA PERF TERRA DO SOL 500ML X","fat":7036.09,"pedidos":75},{"rank":5,"produto":"AGUA PERF FIGO 500ML X","fat":6772.01,"pedidos":72},{"rank":6,"produto":"AGUA PERF INTO 500ML X","fat":6479.62,"pedidos":69},{"rank":7,"produto":"AGUA PERF FLOR 500ML X","fat":6229.68,"pedidos":66},{"rank":8,"produto":"AGUA PERF FLOR 500ML X","fat":6229.68,"pedidos":66},{"rank":9,"produto":"AGUA PERF ALECRIM 500ML X","fat":5951.44,"pedidos":63},{"rank":10,"produto":"AGUA PERF ALECRIM 500ML X","fat":5951.44,"pedidos":63}]}}},"estados":{"2025":{"0":[{"estado":"SP","uf":"SP","fat":1375991.88,"pedidos":30771},{"estado":"MG","uf":"MG","fat":582154.85,"pedidos":14024},{"estado":"RS","uf":"RS","fat":561486.24,"pedidos":12249},{"estado":"SC","uf":"SC","fat":549480.81,"pedidos":11656},{"estado":"EX","uf":"EX","fat":440623.89,"pedidos":2170},{"estado":"PR","uf":"PR","fat":328336.0,"pedidos":7173},{"estado":"MS","uf":"MS","fat":159284.88,"pedidos":3388},{"estado":"RJ","uf":"RJ","fat":141041.04,"pedidos":2620},{"estado":"MT","uf":"MT","fat":99867.51,"pedidos":1988},{"estado":"ES","uf":"ES","fat":80565.1,"pedidos":1925}],"1":[{"estado":"SP","uf":"SP","fat":1309416.95,"pedidos":27975},{"estado":"RS","uf":"RS","fat":450491.53,"pedidos":9729},{"estado":"MG","uf":"MG","fat":412855.13,"pedidos":8789},{"estado":"PR","uf":"PR","fat":391411.48,"pedidos":8207},{"estado":"SC","uf":"SC","fat":298691.93,"pedidos":6186},{"estado":"RJ","uf":"RJ","fat":189959.75,"pedidos":3636},{"estado":"MS","uf":"MS","fat":95262.71,"pedidos":2010},{"estado":"MT","uf":"MT","fat":89598.99,"pedidos":1653},{"estado":"GO","uf":"GO","fat":86105.22,"pedidos":1869},{"estado":"ES","uf":"ES","fat":82617.37,"pedidos":2257}],"2":[{"estado":"SP","uf":"SP","fat":1697294.8,"pedidos":36015},{"estado":"MG","uf":"MG","fat":551877.78,"pedidos":13070},{"estado":"SC","uf":"SC","fat":489096.03,"pedidos":10532},{"estado":"RS","uf":"RS","fat":449161.07,"pedidos":9580},{"estado":"PR","uf":"PR","fat":329442.21,"pedidos":7239},{"estado":"MS","uf":"MS","fat":93537.95,"pedidos":1941},{"estado":"RJ","uf":"RJ","fat":92030.71,"pedidos":2164},{"estado":"MT","uf":"MT","fat":69556.64,"pedidos":1434},{"estado":"PI","uf":"PI","fat":61642.29,"pedidos":1342},{"estado":"ES","uf":"ES","fat":60266.64,"pedidos":1590}],"3":[{"estado":"SP","uf":"SP","fat":2091498.7,"pedidos":46962},{"estado":"SC","uf":"SC","fat":671289.38,"pedidos":13259},{"estado":"RS","uf":"RS","fat":653862.59,"pedidos":13029},{"estado":"MG","uf":"MG","fat":503724.01,"pedidos":11390},{"estado":"PR","uf":"PR","fat":419449.94,"pedidos":8261},{"estado":"MS","uf":"MS","fat":215400.18,"pedidos":4171},{"estado":"RJ","uf":"RJ","fat":194496.28,"pedidos":3345},{"estado":"GO","uf":"GO","fat":142784.81,"pedidos":2797},{"estado":"MT","uf":"MT","fat":135449.73,"pedidos":2474},{"estado":"ES","uf":"ES","fat":106429.66,"pedidos":2320}],"4":[{"estado":"SP","uf":"SP","fat":1629163.03,"pedidos":253816},{"estado":"ES","uf":"ES","fat":16715.0,"pedidos":7010},{"estado":"RJ","uf":"RJ","fat":1972.41,"pedidos":108},{"estado":"RS","uf":"RS","fat":1594.4,"pedidos":57},{"estado":"SC","uf":"SC","fat":1143.98,"pedidos":77},{"estado":"MG","uf":"MG","fat":526.53,"pedidos":21},{"estado":"BA","uf":"BA","fat":439.66,"pedidos":10},{"estado":"PR","uf":"PR","fat":422.56,"pedidos":13},{"estado":"CE","uf":"CE","fat":390.04,"pedidos":69},{"estado":"RR","uf":"RR","fat":258.0,"pedidos":12}],"5":[{"estado":"SP","uf":"SP","fat":2243037.85,"pedidos":121267},{"estado":"ES","uf":"ES","fat":292772.31,"pedidos":11658},{"estado":"SC","uf":"SC","fat":1226.43,"pedidos":77},{"estado":"PR","uf":"PR","fat":1065.65,"pedidos":32},{"estado":"GO","uf":"GO","fat":809.55,"pedidos":24},{"estado":"RS","uf":"RS","fat":769.27,"pedidos":74},{"estado":"PI","uf":"PI","fat":488.22,"pedidos":9},{"estado":"MA","uf":"MA","fat":449.77,"pedidos":64},{"estado":"PE","uf":"PE","fat":398.69,"pedidos":32},{"estado":"DF","uf":"DF","fat":287.38,"pedidos":7}],"6":[{"estado":"SP","uf":"SP","fat":2307810.63,"pedidos":613032},{"estado":"ES","uf":"ES","fat":92273.15,"pedidos":4538},{"estado":"DF","uf":"DF","fat":1921.05,"pedidos":133},{"estado":"RS","uf":"RS","fat":1511.14,"pedidos":26},{"estado":"MG","uf":"MG","fat":872.83,"pedidos":186},{"estado":"AL","uf":"AL","fat":736.7,"pedidos":106},{"estado":"SC","uf":"SC","fat":625.59,"pedidos":28},{"estado":"PE","uf":"PE","fat":526.85,"pedidos":78},{"estado":"BA","uf":"BA","fat":273.36,"pedidos":14},{"estado":"RJ","uf":"RJ","fat":254.52,"pedidos":7}],"7":[{"estado":"SP","uf":"SP","fat":1724773.35,"pedidos":196088},{"estado":"ES","uf":"ES","fat":111278.99,"pedidos":5497},{"estado":"MS","uf":"MS","fat":1224.04,"pedidos":32},{"estado":"RS","uf":"RS","fat":891.18,"pedidos":40},{"estado":"SC","uf":"SC","fat":650.78,"pedidos":24},{"estado":"BA","uf":"BA","fat":309.33,"pedidos":9},{"estado":"RJ","uf":"RJ","fat":291.26,"pedidos":20},{"estado":"PR","uf":"PR","fat":283.01,"pedidos":13},{"estado":"MA","uf":"MA","fat":241.62,"pedidos":65},{"estado":"MG","uf":"MG","fat":167.28,"pedidos":10}],"8":[{"estado":"SP","uf":"SP","fat":2468903.25,"pedidos":251023},{"estado":"ES","uf":"ES","fat":312124.73,"pedidos":10186},{"estado":"MG","uf":"MG","fat":58754.69,"pedidos":999},{"estado":"RJ","uf":"RJ","fat":1383.89,"pedidos":135},{"estado":"RS","uf":"RS","fat":1317.53,"pedidos":77},{"estado":"SC","uf":"SC","fat":685.71,"pedidos":35},{"estado":"MT","uf":"MT","fat":647.75,"pedidos":35},{"estado":"PE","uf":"PE","fat":616.15,"pedidos":50},{"estado":"CE","uf":"CE","fat":547.18,"pedidos":77},{"estado":"AM","uf":"AM","fat":444.58,"pedidos":25}],"9":[{"estado":"SP","uf":"SP","fat":2399157.44,"pedidos":226761},{"estado":"ES","uf":"ES","fat":128651.1,"pedidos":13201},{"estado":"RS","uf":"RS","fat":1853.59,"pedidos":86},{"estado":"SC","uf":"SC","fat":1182.93,"pedidos":138},{"estado":"PR","uf":"PR","fat":929.55,"pedidos":30},{"estado":"PE","uf":"PE","fat":652.11,"pedidos":37},{"estado":"RJ","uf":"RJ","fat":425.47,"pedidos":13},{"estado":"MG","uf":"MG","fat":269.93,"pedidos":25},{"estado":"RR","uf":"RR","fat":266.39,"pedidos":12},{"estado":"BA","uf":"BA","fat":235.67,"pedidos":13}],"10":[{"estado":"SP","uf":"SP","fat":2534094.82,"pedidos":273470},{"estado":"ES","uf":"ES","fat":37790.98,"pedidos":1685},{"estado":"RJ","uf":"RJ","fat":3034.14,"pedidos":94},{"estado":"SC","uf":"SC","fat":2285.64,"pedidos":136},{"estado":"MG","uf":"MG","fat":1990.48,"pedidos":99},{"estado":"PR","uf":"PR","fat":1564.1,"pedidos":89},{"estado":"RS","uf":"RS","fat":1414.95,"pedidos":63},{"estado":"PA","uf":"PA","fat":767.85,"pedidos":28},{"estado":"MT","uf":"MT","fat":269.01,"pedidos":7},{"estado":"BA","uf":"BA","fat":266.39,"pedidos":12}],"11":[{"estado":"SP","uf":"SP","fat":3457858.55,"pedidos":368844},{"estado":"ES","uf":"ES","fat":10494.19,"pedidos":3588},{"estado":"PR","uf":"PR","fat":1081.08,"pedidos":42},{"estado":"SC","uf":"SC","fat":334.95,"pedidos":28},{"estado":"PI","uf":"PI","fat":332.26,"pedidos":8},{"estado":"RS","uf":"RS","fat":235.41,"pedidos":6},{"estado":"RJ","uf":"RJ","fat":232.69,"pedidos":6},{"estado":"DF","uf":"DF","fat":231.59,"pedidos":13},{"estado":"PE","uf":"PE","fat":174.67,"pedidos":7},{"estado":"BA","uf":"BA","fat":82.5,"pedidos":33}]},"2026":{"0":[{"estado":"SP","uf":"SP","fat":1309867.96,"pedidos":25915},{"estado":"MG","uf":"MG","fat":1294646.82,"pedidos":30380},{"estado":"SC","uf":"SC","fat":977410.7,"pedidos":19846},{"estado":"RS","uf":"RS","fat":536842.33,"pedidos":10231},{"estado":"PR","uf":"PR","fat":256583.8,"pedidos":4547},{"estado":"RJ","uf":"RJ","fat":186949.54,"pedidos":2526},{"estado":"ES","uf":"ES","fat":79945.56,"pedidos":1693},{"estado":"MS","uf":"MS","fat":79695.5,"pedidos":1462},{"estado":"CE","uf":"CE","fat":78491.07,"pedidos":777},{"estado":"MT","uf":"MT","fat":70525.21,"pedidos":1306}],"1":[{"estado":"SP","uf":"SP","fat":1399327.9,"pedidos":27151},{"estado":"SC","uf":"SC","fat":573825.98,"pedidos":11048},{"estado":"RS","uf":"RS","fat":533318.77,"pedidos":9984},{"estado":"PR","uf":"PR","fat":408897.03,"pedidos":7651},{"estado":"MG","uf":"MG","fat":335871.56,"pedidos":6177},{"estado":"MS","uf":"MS","fat":135629.82,"pedidos":2768},{"estado":"GO","uf":"GO","fat":117917.22,"pedidos":2167},{"estado":"RJ","uf":"RJ","fat":117568.9,"pedidos":2125},{"estado":"PA","uf":"PA","fat":100090.66,"pedidos":1924},{"estado":"MT","uf":"MT","fat":93421.12,"pedidos":1559}],"2":[{"estado":"SP","uf":"SP","fat":1589518.72,"pedidos":31427},{"estado":"RS","uf":"RS","fat":691216.8,"pedidos":13864},{"estado":"SC","uf":"SC","fat":669601.38,"pedidos":12351},{"estado":"MG","uf":"MG","fat":502491.16,"pedidos":10135},{"estado":"PR","uf":"PR","fat":480067.77,"pedidos":9682},{"estado":"RJ","uf":"RJ","fat":300605.93,"pedidos":4763},{"estado":"MS","uf":"MS","fat":181969.49,"pedidos":3397},{"estado":"ES","uf":"ES","fat":127758.36,"pedidos":2937},{"estado":"MT","uf":"MT","fat":126882.37,"pedidos":2349},{"estado":"BA","uf":"BA","fat":111048.75,"pedidos":2272}],"3":[{"estado":"SP","uf":"SP","fat":1468934.32,"pedidos":28962},{"estado":"RS","uf":"RS","fat":695160.2,"pedidos":14392},{"estado":"SC","uf":"SC","fat":648743.11,"pedidos":12704},{"estado":"PR","uf":"PR","fat":445751.61,"pedidos":9086},{"estado":"EX","uf":"EX","fat":362538.1,"pedidos":2573},{"estado":"MG","uf":"MG","fat":360660.96,"pedidos":7599},{"estado":"RJ","uf":"RJ","fat":210602.69,"pedidos":3423},{"estado":"ES","uf":"ES","fat":175930.1,"pedidos":4254},{"estado":"MS","uf":"MS","fat":145519.31,"pedidos":2734},{"estado":"GO","uf":"GO","fat":116565.72,"pedidos":2185}],"4":[{"estado":"SP","uf":"SP","fat":9004670.5,"pedidos":2197004},{"estado":"ES","uf":"ES","fat":678530.51,"pedidos":14169},{"estado":"MT","uf":"MT","fat":2307.29,"pedidos":43},{"estado":"PR","uf":"PR","fat":1712.64,"pedidos":103},{"estado":"PE","uf":"PE","fat":634.38,"pedidos":39},{"estado":"CE","uf":"CE","fat":593.45,"pedidos":23},{"estado":"MS","uf":"MS","fat":400.93,"pedidos":31},{"estado":"RO","uf":"RO","fat":393.77,"pedidos":10},{"estado":"RR","uf":"RR","fat":291.17,"pedidos":12},{"estado":"SC","uf":"SC","fat":236.89,"pedidos":31}]}}};</script>
 <script>
 /* ================== DADOS ================== */
 const DRE = {
@@ -19767,9 +19396,9 @@ setInterval(() => {
 
 /* Dados das novas abas */
 let DRE_ECOM = { rows: [], months: MONTHS };
-let ESTADOS_DATA = {};       // { '2026': { mesIdx: [{estado,fat,pedidos},...] } }
+let ESTADOS_DATA = (window.__RANKING_SNAPSHOT__ && window.__RANKING_SNAPSHOT__.estados) ? window.__RANKING_SNAPSHOT__.estados : {};
 let ESTADOS_POR_CANAL = {};  // { ano: { canal: { mesIdx: [{estado,fat,pedidos}] } } } - das BASEs
-let RANKING_PROD_DATA = {};  // { ano: { canal: { mesIdx: [{produto,fat,pedidos}] } } }
+let RANKING_PROD_DATA = (window.__RANKING_SNAPSHOT__ && window.__RANKING_SNAPSHOT__.produtos) ? window.__RANKING_SNAPSHOT__.produtos : {};
 
 const MONTH_ALIASES={
   'janeiro':0,'jan':0,'fevereiro':1,'fev':1,'março':2,'marco':2,'mar':2,'abril':3,'abr':3,
@@ -19927,7 +19556,7 @@ function processPayload(payload){
 
   /* ===== 3. Estados ===== */
   const rawEst = payload.rankingEstados;
-  if(rawEst && typeof rawEst === 'object' && !rawEst.erro){
+  if(rawEst && typeof rawEst === 'object' && !rawEst.erro && Object.keys(rawEst).length > 0){
     ESTADOS_DATA = {};
     for(const ano of Object.keys(rawEst)){
       ESTADOS_DATA[ano] = {};
@@ -19967,10 +19596,10 @@ function processPayload(payload){
 
   /* ===== 4. Produtos por Canal ===== */
   const rawProd = payload.rankingProdutos;
-  if(rawProd && typeof rawProd === 'object' && !rawProd.erro){
-    RANKING_PROD_DATA = {};
+  if(rawProd && typeof rawProd === 'object' && !rawProd.erro && Object.keys(rawProd).length > 0){
+    RANKING_PROD_DATA = RANKING_PROD_DATA || {};
     for (const ano of Object.keys(rawProd)) {
-      RANKING_PROD_DATA[ano] = {};
+      if(!RANKING_PROD_DATA[ano]) RANKING_PROD_DATA[ano] = {};
       for (const canal of Object.keys(rawProd[ano] || {})) {
         RANKING_PROD_DATA[ano][canal] = {};
         for (const mIdxStr of Object.keys(rawProd[ano][canal] || {})) {
@@ -20168,7 +19797,7 @@ async function syncFromGoogleSheets(forceRefresh){
       return isNaN(n) ? null : n;
     }
     const rawEst = payload.rankingEstados;
-    if(rawEst && typeof rawEst === 'object' && !rawEst.erro){
+    if(rawEst && typeof rawEst === 'object' && !rawEst.erro && Object.keys(rawEst).length > 0){
       ESTADOS_DATA = {};
       for(const ano of Object.keys(rawEst)){
         ESTADOS_DATA[ano] = {};
@@ -20222,11 +19851,11 @@ async function syncFromGoogleSheets(forceRefresh){
     /* ===== 4. Produtos por Canal ===== */
     /* O Apps Script v3 retorna { ano: { canal: { mesIdx: [{rank,produto,fat,pedidos}] } } } */
     const rawProd = payload.rankingProdutos;
-    if(rawProd && typeof rawProd === 'object' && !rawProd.erro){
+    if(rawProd && typeof rawProd === 'object' && !rawProd.erro && Object.keys(rawProd).length > 0){
       // Normaliza valores (aceita string numerica tambem)
-      RANKING_PROD_DATA = {};
+      RANKING_PROD_DATA = RANKING_PROD_DATA || {};
       for (const ano of Object.keys(rawProd)) {
-        RANKING_PROD_DATA[ano] = {};
+        if(!RANKING_PROD_DATA[ano]) RANKING_PROD_DATA[ano] = {};
         for (const canal of Object.keys(rawProd[ano] || {})) {
           RANKING_PROD_DATA[ano][canal] = {};
           for (const mIdxStr of Object.keys(rawProd[ano][canal] || {})) {
