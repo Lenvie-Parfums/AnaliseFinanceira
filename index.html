@@ -705,7 +705,7 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
     if (user.r === "ecommerce") {
       applyChannelLock("ecommerce", ["ecommerce","ecom"]);
     } else if (user.r === "atacado") {
-      applyChannelLock("atacado", ["atacado","representante"]);
+      applyChannelLock("atacado", ["atacado","representante","exporta"]);
     }
   }
 
@@ -725,33 +725,34 @@ table.fin-table.fin-estoque th,table.fin-table.fin-estoque td{font-size:12px}
     function lockSelect(id) {
       var sel = document.getElementById(id);
       if (!sel) return;
-      // Procura option que casa com algum token
-      var targetOpt = null;
+      // Mantém TODAS as opções que casam com algum token permitido.
+      // (ex.: Atacado pode ter "Atacado / Representantes" + "Exportação")
+      var keepVals = [];
       for (var i = 0; i < sel.options.length; i++) {
-        if (isMatch(sel.options[i].value)) { targetOpt = sel.options[i]; break; }
+        if (isMatch(sel.options[i].value)) keepVals.push(sel.options[i].value);
       }
-      if (targetOpt) {
-        var keepVal = targetOpt.value;
-        // Verifica se ja esta no estado travado correto.
-        // Se sim, NAO mexe e NAO dispara change (evita re-render que reseta a tela).
-        var alreadyLocked = sel.disabled
-          && sel.value === keepVal
-          && sel.options.length === 1;
-        if (alreadyLocked) return;
+      if (!keepVals.length) return;            // este seletor não tem canal do usuário
+      var prev = sel.value;
+      var defVal = (keepVals.indexOf(prev) >= 0) ? prev : keepVals[0]; // preserva escolha válida
+      var multi = keepVals.length > 1;         // 2+ canais → deixa escolher; 1 → trava
 
-        // Remove as outras opcoes
-        for (var j = sel.options.length - 1; j >= 0; j--) {
-          if (sel.options[j].value !== keepVal) sel.remove(j);
-        }
-        var changed = (sel.value !== keepVal);
-        sel.value = keepVal;
-        sel.disabled = true;
-        sel.style.opacity = "0.7";
-        sel.style.cursor = "not-allowed";
-        // So dispara change se o valor realmente mudou (primeira aplicacao)
-        if (changed) {
-          try { sel.dispatchEvent(new Event("change", {bubbles:true})); } catch(e) {}
-        }
+      // Se já está no estado correto, não mexe (evita re-render que reseta a tela)
+      var alreadyOk = (sel.options.length === keepVals.length)
+        && (sel.value === defVal)
+        && (sel.disabled === !multi);
+      if (alreadyOk) return;
+
+      // Remove as opções que não são permitidas
+      for (var j = sel.options.length - 1; j >= 0; j--) {
+        if (keepVals.indexOf(sel.options[j].value) < 0) sel.remove(j);
+      }
+      var changed = (sel.value !== defVal);
+      sel.value = defVal;
+      sel.disabled = !multi;                   // trava só quando há um único canal
+      sel.style.opacity = multi ? "" : "0.7";
+      sel.style.cursor  = multi ? "" : "not-allowed";
+      if (changed) {
+        try { sel.dispatchEvent(new Event("change", {bubbles:true})); } catch(e) {}
       }
     }
 
@@ -17887,7 +17888,7 @@ function getUserChannelTokens() {
   const u = window.currentUser;
   if (!u) return null;
   if (u.r === "ecommerce") return ["ecommerce","ecom","e-commerce","loja virtual"];
-  if (u.r === "atacado")   return ["atacado","representantes","venda direta"];
+  if (u.r === "atacado")   return ["atacado","representantes","venda direta","exporta"];
   return null;
 }
 
